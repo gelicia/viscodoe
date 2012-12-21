@@ -1,4 +1,4 @@
-/*global Miso*/
+/*global Miso,_,console*/
 
 /*
  this is not generic for now, make it generic later!
@@ -12,16 +12,16 @@ Array.prototype.addNewInfo = function(newItem, newInfoCol, newColName) {
 };
 
 Array.prototype.avg = function() {
-	var total;
+	var total = 0;
 	for (var i = 0; i < this.length; i++) {
-		total = total + this[i];
+		total += this[i];
 	}
 	return total / this.length;
 };
 
-function loadDataset () {
-	var allSchInfo = [];
+var allSchInfo = [];
 
+function loadDataset () {
 	var schList = new Miso.Dataset({
 		url : "data/school_gps_coordinates.csv",
 		delimiter : ","
@@ -61,127 +61,145 @@ function loadDataset () {
 	});
 
 //first, push a list of all the schools with info
-	schList.fetch({
-		success : function() {
-			this.each(
-				function(row){
-					var schInfo = {};
-					schInfo.schoolNum = row['School Number'];
-					schInfo.schoolName = row['School Name'];
-					allSchInfo.push(schInfo);
-				}
-			);
-		}
-	});
-	
-//next, add in population/frl data by school
-	pop2010.fetch({
-		success : function() {
-			this.each(
-				function(row){
-					var schInfo = {};
-					schInfo.schoolNum = row['SCHOOL CODE'];
-					schInfo.totalPop = row.TOTAL;
+//this is all done within underscore's _.when so they will all fetch before proceeding
+	_.when(
+		schList.fetch({
+			success : function() {
+				this.each(
+					function(row){
+						var schInfo = {};
+						schInfo.schoolNum = row['School Number'];
+						schInfo.schoolName = row['School Name'];
+						allSchInfo.push(schInfo);
+					}
+				);
+			}
+		}),
+		
+	//next, add in population/frl data by school
+		pop2010.fetch({
+			success : function() {
+				this.each(
+					function(row){
+						var schInfo = {};
+						schInfo.schoolNum = row['SCHOOL CODE'];
+						schInfo.totalPop = row.TOTAL;
 
-					allSchInfo.addNewInfo(schInfo, 'totalPop', 'pop2010Total');
-				}
-			);
-		}
-	});
+						allSchInfo.addNewInfo(schInfo, 'totalPop', 'pop2010Total');
+					}
+				);
+			}
+		}),
 
-	frl2010.fetch({
-		success : function() {
-			this.each(
-				function(row){
-					if (row['SCHOOL NAME'] != 'STATE TOTAL' && row['% FREE AND REDUCED'] !== null){
+		frl2010.fetch({
+			success : function() {
+				this.each(
+					function(row){
+						if (row['SCHOOL NAME'] != 'STATE TOTAL' && row['% FREE AND REDUCED'] !== null){
+							var schInfo = {};
+							schInfo.schoolNum = row['SCHOOL CODE'];
+							schInfo.frlPct = parseFloat(row['% FREE AND REDUCED'].substring(0, row['% FREE AND REDUCED'].length - 1));
+
+							allSchInfo.addNewInfo(schInfo, 'frlPct', 'frlPercent2010');
+						}
+					}
+				);
+			}
+		}),
+
+		pop2011.fetch({
+			success : function() {
+				this.each(
+					function(row){
+						var schInfo = {};
+						schInfo.schoolNum = row['School Code'];
+						schInfo.totalPop = row.TOTAL;
+
+						allSchInfo.addNewInfo(schInfo, 'totalPop', 'pop2011Total');
+					}
+				);
+			}
+		}),
+
+		frl2011.fetch({
+			success : function() {
+				this.each(
+					function(row){
 						var schInfo = {};
 						schInfo.schoolNum = row['SCHOOL CODE'];
 						schInfo.frlPct = parseFloat(row['% FREE AND REDUCED'].substring(0, row['% FREE AND REDUCED'].length - 1));
 
-						allSchInfo.addNewInfo(schInfo, 'frlPct', 'frlPercent2010');
+						allSchInfo.addNewInfo(schInfo, 'frlPct', 'frlPercent2011');				
 					}
-				}
-			);
-		}
-	});
+				);
+			}
+		}),
 
-	pop2011.fetch({
-		success : function() {
-			this.each(
-				function(row){
-					var schInfo = {};
-					schInfo.schoolNum = row['School Code'];
-					schInfo.totalPop = row.TOTAL;
-
-					allSchInfo.addNewInfo(schInfo, 'totalPop', 'pop2011Total');
-				}
-			);
-		}
-	});
-
-	frl2011.fetch({
-		success : function() {
-			this.each(
-				function(row){
-					var schInfo = {};
-					schInfo.schoolNum = row['SCHOOL CODE'];
-					schInfo.frlPct = parseFloat(row['% FREE AND REDUCED'].substring(0, row['% FREE AND REDUCED'].length - 1));
-
-					allSchInfo.addNewInfo(schInfo, 'frlPct', 'frlPercent2011');				
-				}
-			);
-		}
-	});
-
-	pop2012.fetch({
-		success : function() {
-			this.each(
-				function(row){
-					var schInfo = {};
-					schInfo.schoolNum = row['School Code'];
-					schInfo.totalPop = row.TOTAL;
-
-					allSchInfo.addNewInfo(schInfo, 'totalPop', 'pop2012Total');
-				}
-			);
-		}
-	});
-
-	frl2012.fetch({
-		success : function() {
-			this.each(
-				function(row){
-					if (row['SCHOOL NAME'] != 'STATE TOTAL' && row['% FREE AND REDUCED'] !== null){
+		pop2012.fetch({
+			success : function() {
+				this.each(
+					function(row){
 						var schInfo = {};
-						schInfo.schoolNum = row['SCHOOL CODE'];
+						schInfo.schoolNum = row['School Code'];
+						schInfo.totalPop = row.TOTAL;
 
-						schInfo.frlPct = parseFloat(row['% FREE AND REDUCED'].substring(0, row['% FREE AND REDUCED'].length - 1));
-
-						allSchInfo.addNewInfo(schInfo, 'frlPct', 'frlPercent2012');
+						allSchInfo.addNewInfo(schInfo, 'totalPop', 'pop2012Total');
 					}
-				}
-			);
+				);
+			}
+		}),
+
+		frl2012.fetch({
+			success : function() {
+				this.each(
+					function(row){
+						if (row['SCHOOL NAME'] != 'STATE TOTAL' && row['% FREE AND REDUCED'] !== null){
+							var schInfo = {};
+							schInfo.schoolNum = row['SCHOOL CODE'];
+
+							schInfo.frlPct = parseFloat(row['% FREE AND REDUCED'].substring(0, row['% FREE AND REDUCED'].length - 1));
+
+							allSchInfo.addNewInfo(schInfo, 'frlPct', 'frlPercent2012');
+						}
+					}
+				);
+			}
+		})
+	).then(
+		function(){
+			console.log(allSchInfo.length);
+			drawPage();
 		}
-	});
+	);
+}
 
-	alert(allSchInfo.length);
-
-	for (var p = 0; p < allSchInfo.length; p++) {
+function drawPage(){
+	for (var i = 0; i < allSchInfo.length; i++) {
 		var populations = [];
 		var frlTotals = [];
 
-		if (allSchInfo[p].pop2010Total !== undefined){
-			populations.push(allSchInfo[p].pop2010Total);
+		if (allSchInfo[i].pop2010Total !== undefined){
+			populations.push(allSchInfo[i].pop2010Total);
 		}
-		if (allSchInfo[p].pop2011Total !== undefined){
-			populations.push(allSchInfo[p].pop2011Total);
+		if (allSchInfo[i].pop2011Total !== undefined){
+			populations.push(allSchInfo[i].pop2011Total);
 		}
-		if (allSchInfo[p].pop2012Total !== undefined){
-			populations.push(allSchInfo[p].pop2012Total);
+		if (allSchInfo[i].pop2012Total !== undefined){
+			populations.push(allSchInfo[i].pop2012Total);
 		}
 
-		//allSchInfo[p].avgPopTotal = Math.round(populations.avg());
-		//allSchInfo[i].avgFRLTotal = Math.round((allSchInfo[i].frlPercent2010 +  this[i].pop2011Total + allSchInfo[i].frlPercent2012) / 3);
+		if (allSchInfo[i].frlPercent2010 !== undefined){
+			frlTotals.push(allSchInfo[i].frlPercent2010);
+		}
+		if (allSchInfo[i].frlPercent2011 !== undefined){
+			frlTotals.push(allSchInfo[i].frlPercent2011);
+		}
+		if (allSchInfo[i].frlPercent2012 !== undefined){
+			frlTotals.push(allSchInfo[i].frlPercent2012);
+		}
+
+		allSchInfo[i].avgPopTotal = Math.round(populations.avg());
+		allSchInfo[i].avgFRLTotal = frlTotals.avg();
 	}
 
 	console.log("hello");

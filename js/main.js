@@ -1,4 +1,4 @@
-/*global Miso,_,console*/
+/*global Miso,_,console,d3*/
 
 /*
  this is not generic for now, make it generic later!
@@ -202,5 +202,60 @@ function drawPage(){
 		allSchInfo[i].avgFRLTotal = frlTotals.avg();
 	}
 
-	console.log("hello");
+	var pageWidth = 700;
+
+	var svg = d3.select("svg")
+				.attr("width", pageWidth)
+				.attr("height", allSchInfo.length * 30);
+
+	var pop2010Max = d3.max(allSchInfo, function(d10) {
+		return d10.pop2010Total;
+	});
+	var pop2011Max = d3.max(allSchInfo, function(d11) {
+		return d11.pop2011Total;
+	});
+	var pop2012Max = d3.max(allSchInfo, function(d12) {
+		return d12.pop2012Total;
+	});
+
+	var popMax = d3.max([pop2010Max, pop2011Max, pop2012Max]);
+
+	var barWidth = d3.scale.linear()
+		.domain([0, popMax])
+		.range([0, pageWidth]);
+
+	var popBars = svg.selectAll("rect.popBars").data(allSchInfo);
+
+	popBars.enter()
+		.append("rect")
+		.attr({
+			width : function(d){
+				return barWidth(d.avgPopTotal);
+			},
+			height: 20, 
+			y: function (d, i) {
+				return i * 25 + 20;
+			}, 
+			fill : "#00ff00"
+		})
+		.classed("popBars", true);
+
+	var frlBars = svg.selectAll("rect.frlBars").data(allSchInfo);
+
+	frlBars.enter()
+		.append("rect")
+		.attr({
+			width : function(d){
+				return barWidth((d.avgFRLTotal/100) * d.avgPopTotal);
+			},
+			height: 20, 
+			y: function (d, i) {
+				return i * 25 + 20;
+			}, 
+			fill : "#0000ff"
+		})
+		.classed("frlBars", true)
+		.on("click", function(d){
+			alert(d.avgFRLTotal + "% of " + d.avgPopTotal);
+		});
 }

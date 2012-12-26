@@ -167,6 +167,7 @@ function loadDataset () {
 		})
 	).then(
 		function(){
+			document.getElementById("loading").style.display = 'none';
 			console.log(allSchInfo.length);
 			drawPage();
 		}
@@ -174,6 +175,20 @@ function loadDataset () {
 }
 
 function drawPage(){
+	//widths
+	var pageWidth = 1000;
+	var singleInfoBarWidth = 20;
+	var numInfoPoints = 3;
+	var barMargin = 5; 
+
+	//colors
+	var populationColor = "#69D2E7";
+	var populationMouseOverColor = "#5DBACD";
+	var popBreakdownColor = "#A7DBD8";
+	var frlColor = "#FA6900"; 
+	var frlBreakdownColor = "#F38630";
+
+
 	for (var i = 0; i < allSchInfo.length; i++) {
 		var populations = [];
 		var frlTotals = [];
@@ -199,14 +214,12 @@ function drawPage(){
 		}
 
 		allSchInfo[i].avgPopTotal = Math.round(populations.avg());
-		allSchInfo[i].avgFRLTotal = frlTotals.avg();
+		allSchInfo[i].avgFRLTotal = frlTotals.avg().toFixed(2);
 	}
-
-	var pageWidth = 700;
 
 	var svg = d3.select("svg")
 				.attr("width", pageWidth)
-				.attr("height", allSchInfo.length * 30);
+				.attr("height", allSchInfo.length * (singleInfoBarWidth + barMargin));
 
 	var pop2010Max = d3.max(allSchInfo, function(d10) {
 		return d10.pop2010Total;
@@ -232,15 +245,70 @@ function drawPage(){
 			width : function(d){
 				return barWidth(d.avgPopTotal);
 			},
-			height: 20, 
+			height: singleInfoBarWidth, 
 			y: function (d, i) {
-				return i * 25 + 20;
+				return i * (singleInfoBarWidth + barMargin);
 			}, 
-			fill : "#00ff00"
+			fill : populationColor,
+			id: function(d,i){
+				return "popBar" + i;
+			}
 		})
-		.classed("popBars", true);
+		.classed("popBars", true)
+		.classed("popBarUnclick", true)
+		.on("mouseover", function (d, i) {
+			svg.selectAll("#popBar" + i)
+				.attr({
+					fill: populationMouseOverColor
+				});
+		})
+		.on("mouseout", function (d, i) {
+			svg.selectAll("#popBar" + i)
+				.attr({
+					fill: populationColor
+				});
+		})
+		.on("click", function(d, i){
+			//alert("#bar" + i + ": " + d.avgFRLTotal + "% of " + d.avgPopTotal);
 
-	var frlBars = svg.selectAll("rect.frlBars").data(allSchInfo);
+			var notClicked = popBars.filter(
+				function(dIn, iIn){
+					return iIn != i;
+				}
+			);
+
+			popBars.classed("popBarUnclick", false)
+			.classed("popBarClick", false)
+			.classed("popBarUnclick", true);
+
+			notClicked.transition()
+				.duration(1000)
+				.ease("bounce")
+				.attr({
+					y: function (dy, iy) {
+						if (iy > (i-1)){
+							return iy * (singleInfoBarWidth + barMargin) + ((singleInfoBarWidth * numInfoPoints) + barMargin);
+						}
+						else {
+							return iy * (singleInfoBarWidth + barMargin);
+						}
+					},
+					height: singleInfoBarWidth
+				});
+
+			svg.selectAll("#popBar" + i)
+				.classed("popBarUnclick", false)
+				.classed("popBarClick", true)
+				.transition()
+				.duration(1000)
+				.ease("bounce")
+				.attr({
+					height: (singleInfoBarWidth * numInfoPoints),
+					y : i * (singleInfoBarWidth + barMargin)
+				});
+		});
+
+	/*var frlBars = svg.selectAll("rect.frlBars").data(allSchInfo);
 
 	frlBars.enter()
 		.append("rect")
@@ -255,7 +323,9 @@ function drawPage(){
 			fill : "#0000ff"
 		})
 		.classed("frlBars", true)
-		.on("click", function(d){
-			alert(d.avgFRLTotal + "% of " + d.avgPopTotal);
-		});
+		.on("click", function(){
+			//alert(d.avgFRLTotal + "% of " + d.avgPopTotal);
+			//hide bar
+			//draw 23 bars in place with 
+		});*/
 }

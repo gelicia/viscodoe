@@ -1,4 +1,4 @@
-/*global Miso,_,console,d3*/
+/*global Miso,_,d3,document*/
 
 /*
  this is not generic for now, make it generic later!
@@ -19,7 +19,15 @@ Array.prototype.avg = function() {
 	return total / this.length;
 };
 
+//thanks to mbostock and trinary in #d3.js :D 
+d3.selection.prototype.moveToFront = function() { 
+	return this.each(function() { 
+		this.parentNode.appendChild(this); 
+	}); 
+}; 
+
 var allSchInfo = [];
+var lastClickedIdx;
 
 function loadDataset () {
 	var schList = new Miso.Dataset({
@@ -168,7 +176,6 @@ function loadDataset () {
 	).then(
 		function(){
 			document.getElementById("loading").style.display = 'none';
-			console.log(allSchInfo.length);
 			drawPage();
 		}
 	);
@@ -183,10 +190,9 @@ function drawPage(){
 
 	//colors
 	var populationColor = "#69D2E7";
-	var populationMouseOverColor = "#5DBACD";
-	var popBreakdownColor = "#A7DBD8";
-	var frlColor = "#FA6900"; 
-	var frlBreakdownColor = "#F38630";
+	var populationDarkColor = "#57AFC0";
+	var frlColor = "#F18911"; 
+	var frlDarkColor = "#C7710E";
 
 
 	for (var i = 0; i < allSchInfo.length; i++) {
@@ -218,8 +224,8 @@ function drawPage(){
 	}
 
 	var svg = d3.select("svg")
-				.attr("width", pageWidth)
-				.attr("height", allSchInfo.length * (singleInfoBarWidth + barMargin));
+		.attr("width", pageWidth)
+		.attr("height", allSchInfo.length * (singleInfoBarWidth + barMargin));
 
 	var pop2010Max = d3.max(allSchInfo, function(d10) {
 		return d10.pop2010Total;
@@ -237,6 +243,7 @@ function drawPage(){
 		.domain([0, popMax])
 		.range([0, pageWidth]);
 
+//popBars
 	var popBars = svg.selectAll("rect.popBars").data(allSchInfo);
 
 	popBars.enter()
@@ -255,60 +262,19 @@ function drawPage(){
 			}
 		})
 		.classed("popBars", true)
-		.classed("popBarUnclick", true)
+		.classed("unclicked", true)
 		.on("mouseover", function (d, i) {
-			svg.selectAll("#popBar" + i)
-				.attr({
-					fill: populationMouseOverColor
-				});
+			mouseOverBars(i, "pop");
 		})
 		.on("mouseout", function (d, i) {
-			svg.selectAll("#popBar" + i)
-				.attr({
-					fill: populationColor
-				});
+			mouseOutBars(i, "pop");
 		})
-		.on("click", function(d, i){
-			//alert("#bar" + i + ": " + d.avgFRLTotal + "% of " + d.avgPopTotal);
-
-			var notClicked = popBars.filter(
-				function(dIn, iIn){
-					return iIn != i;
-				}
-			);
-
-			popBars.classed("popBarUnclick", false)
-			.classed("popBarClick", false)
-			.classed("popBarUnclick", true);
-
-			notClicked.transition()
-				.duration(1000)
-				.ease("bounce")
-				.attr({
-					y: function (dy, iy) {
-						if (iy > (i-1)){
-							return iy * (singleInfoBarWidth + barMargin) + ((singleInfoBarWidth * numInfoPoints) + barMargin);
-						}
-						else {
-							return iy * (singleInfoBarWidth + barMargin);
-						}
-					},
-					height: singleInfoBarWidth
-				});
-
-			svg.selectAll("#popBar" + i)
-				.classed("popBarUnclick", false)
-				.classed("popBarClick", true)
-				.transition()
-				.duration(1000)
-				.ease("bounce")
-				.attr({
-					height: (singleInfoBarWidth * numInfoPoints),
-					y : i * (singleInfoBarWidth + barMargin)
-				});
+		.on("click", function (d, i){
+			clickBar(i);
 		});
 
-	/*var frlBars = svg.selectAll("rect.frlBars").data(allSchInfo);
+//frlBars
+	var frlBars = svg.selectAll("rect.frlBars").data(allSchInfo);
 
 	frlBars.enter()
 		.append("rect")
@@ -316,16 +282,309 @@ function drawPage(){
 			width : function(d){
 				return barWidth((d.avgFRLTotal/100) * d.avgPopTotal);
 			},
-			height: 20, 
+			height: singleInfoBarWidth, 
 			y: function (d, i) {
-				return i * 25 + 20;
+				return i * (singleInfoBarWidth + barMargin);
 			}, 
-			fill : "#0000ff"
+			fill : frlColor,
+			id: function(d,i){
+				return "frlBar" + i;
+			}
 		})
 		.classed("frlBars", true)
-		.on("click", function(){
-			//alert(d.avgFRLTotal + "% of " + d.avgPopTotal);
-			//hide bar
-			//draw 23 bars in place with 
-		});*/
+		.classed("unclicked", true)
+		.on("mouseover", function (d, i) {
+			mouseOverBars(i, "frl");
+		})
+		.on("mouseout", function (d, i) {
+			mouseOutBars(i, "frl");
+		})
+		.on("click", function (d, i){
+			clickBar(i); 
+		});
+
+	function mouseOverBars(i, type){
+		var base;
+		if (type == "pop") {
+			base = "popBar";
+		}
+		else {
+			base = "frlBar";
+		}
+
+		var className = document.getElementById(base + i).className.baseVal;
+		//alert(className);
+		if (className == base + "s unclicked"){
+			svg.selectAll("#popBar" + i)
+				.attr({
+					fill: populationDarkColor//populationMouseOverColor
+				});
+			svg.selectAll("#frlBar" + i)
+				.attr({
+					fill: frlDarkColor//frlMouseOverColor
+				});
+		}
+	}
+
+	function mouseOutBars(i, type){
+		var base;
+		if (type == "pop") {
+			base = "popBar";
+		}
+		else {
+			base = "frlBar";
+		}
+
+		var className = document.getElementById(base + i).className.baseVal;
+		//alert(className);
+		if (className == base + "s unclicked"){
+			svg.selectAll("#popBar" + i)
+				.attr({
+					fill: populationColor
+				});
+			svg.selectAll("#frlBar" + i)
+				.attr({
+					fill: frlColor
+				});
+		}
+	}
+
+/*3 scenarios:
+	first click 
+	click bar post clicking bar
+	second click bar to close bar*/
+	function clickBar(i){
+		//unclick previous, if exists or if it's a bar's second click
+		if (lastClickedIdx !== undefined || (lastClickedIdx == i)){
+			svg.selectAll(".popBarDetail").remove();
+			svg.selectAll(".frlBarDetail").remove();
+
+			svg.selectAll("#popBar" + lastClickedIdx)
+				.classed("clicked", false)
+				.classed("unclicked", true)
+				.transition()
+				.duration(1000)
+				.ease("bounce")
+				.attr({
+					height: singleInfoBarWidth,
+					fill: populationColor
+				});
+
+			svg.selectAll("#frlBar" + lastClickedIdx)
+				.classed("clicked", false)
+				.classed("unclicked", true)
+				.transition()
+				.duration(1000)
+				.ease("bounce")
+				.attr({
+					height: singleInfoBarWidth,
+					fill: frlColor,
+					y: function(){
+						if (lastClickedIdx > i){ //last click is before
+							return (lastClickedIdx * (singleInfoBarWidth + barMargin)) + (singleInfoBarWidth * (numInfoPoints - 1));
+						}
+						else if (lastClickedIdx < i) { //last click was after
+							return (lastClickedIdx * (singleInfoBarWidth + barMargin));
+						}	
+					}
+				});
+		}
+
+		//move those that were not clicked out of the way of the expanding clicked bar
+		var notClicked;
+
+
+		if (lastClickedIdx == i){ //if second click, then all are not clicked
+			notClicked = popBars;
+		}
+		else {
+			notClicked = popBars.filter(
+				function(dIn, iIn){
+					return iIn != i;
+				}
+			);
+		}
+
+		notClicked.transition()
+			.duration(1000)
+			.ease("bounce")
+			.attr({
+				y: function (dy, iy) {
+					if (i == lastClickedIdx){
+						return iy * (singleInfoBarWidth + barMargin);
+					}
+					else if (iy > (i-1)){
+						return iy * (singleInfoBarWidth + barMargin) + ((singleInfoBarWidth * numInfoPoints) + barMargin);
+					}
+					else {
+						return iy * (singleInfoBarWidth + barMargin);
+					}
+				},
+				height: singleInfoBarWidth,
+				fill: populationColor
+			});
+
+		//think this has to be done like this because the indexes for the two sets of bars are the same
+		//TODO I can't get it to unclick both sets at once
+		if (lastClickedIdx == i){
+			notClicked = frlBars;
+		}
+		else {
+			notClicked = frlBars.filter(
+				function(dIn, iIn){
+					return iIn != i;
+				}
+			);
+		}
+
+		notClicked.transition()
+			.duration(1000)
+			.ease("bounce")
+			.attr({
+				y: function (dy, iy) {
+					if (i == lastClickedIdx){
+						return iy * (singleInfoBarWidth + barMargin);
+					}
+					else if (iy > (i-1)){
+						return iy * (singleInfoBarWidth + barMargin) + ((singleInfoBarWidth * numInfoPoints) + barMargin);
+					}
+					else {
+						return iy * (singleInfoBarWidth + barMargin);
+					}
+				},
+				height: singleInfoBarWidth,
+				fill: frlColor
+			});
+
+		//Run click logic - if bar's second click, nothing is clicked
+		if (lastClickedIdx != i){
+			//svg does not support z-index, go from back to front
+			//darkened average population bar and widen
+			svg.selectAll("#popBar" + i)
+				.classed("clicked", true)
+				.classed("unclicked", false)
+				.transition()
+				.duration(1000)
+				.ease("bounce")
+				.attr({
+					height: (singleInfoBarWidth * numInfoPoints),
+					y : i * (singleInfoBarWidth + barMargin),
+					fill: populationDarkColor
+				});
+				
+
+			//second add detailPopBars
+			svg.append("rect")
+				.classed("popBarDetail", true)
+				.attr({
+					height: singleInfoBarWidth, 
+					y: i * (singleInfoBarWidth + barMargin), 
+					fill : populationColor,
+					id: "detPopBar2010" + i
+				})
+				.transition()
+				.duration(1000)
+				.ease("bounce")
+				.attr({
+					width : barWidth(allSchInfo[i].pop2010Total)
+				});
+				
+			svg.append("rect")
+				.classed("popBarDetail", true)
+				.attr({
+					height: singleInfoBarWidth, 
+					y: i * (singleInfoBarWidth + barMargin) + singleInfoBarWidth, 
+					fill : populationColor,
+					id: "detPopBar2011" + i
+				})
+				.transition()
+				.duration(1000)
+				.ease("bounce")
+				.attr({
+					width : barWidth(allSchInfo[i].pop2011Total)
+				});
+
+			svg.append("rect")
+				.classed("popBarDetail", true)
+				.attr({
+					height: singleInfoBarWidth, 
+					y: i * (singleInfoBarWidth + barMargin) + (singleInfoBarWidth * 2), 
+					fill : populationColor,
+					id: "detPopBar2012" + i
+				})
+				.transition()
+				.duration(1000)
+				.ease("bounce")
+				.attr({
+					width : barWidth(allSchInfo[i].pop2012Total)
+				});
+
+			//third, move the frlBar for the clicked bar to the front, then widen and darken
+			svg.selectAll("#frlBar" + i).moveToFront();
+	
+			svg.selectAll("#frlBar" + i)
+				.classed("clicked", true)
+				.classed("unclicked", false)
+				.transition()
+				.duration(1000)
+				.ease("bounce")
+				.attr({
+					height: (singleInfoBarWidth * numInfoPoints),
+					y : i * (singleInfoBarWidth + barMargin),
+					fill: frlDarkColor
+				});
+
+			//fourth, detailed frl
+			svg.append("rect")
+				.classed("frlBarDetail", true)
+				.attr({
+					height: singleInfoBarWidth, 
+					y: i * (singleInfoBarWidth + barMargin), 
+					fill : frlColor,
+					id: "detFrlBar2010" + i
+				})
+				.transition()
+				.duration(1000)
+				.ease("bounce")
+				.attr({
+					width : barWidth((allSchInfo[i].frlPercent2010/100) * allSchInfo[i].pop2010Total)
+				});
+				
+			svg.append("rect")
+				.classed("frlBarDetail", true)
+				.attr({
+					height: singleInfoBarWidth, 
+					y: i * (singleInfoBarWidth + barMargin) + singleInfoBarWidth, 
+					fill : frlColor,
+					id: "detFrlBar2011" + i
+				})
+				.transition()
+				.duration(1000)
+				.ease("bounce")
+				.attr({
+					width : barWidth((allSchInfo[i].frlPercent2011/100) * allSchInfo[i].pop2011Total)
+				});
+
+			svg.append("rect")
+				.classed("frlBarDetail", true)
+				.attr({
+					height: singleInfoBarWidth, 
+					y: i * (singleInfoBarWidth + barMargin) + (singleInfoBarWidth * 2), 
+					fill : frlColor,
+					id: "detFrlBar2012" + i
+				})
+				.transition()
+				.duration(1000)
+				.ease("bounce")
+				.attr({
+					width : barWidth((allSchInfo[i].frlPercent2012/100) * allSchInfo[i].pop2012Total)
+				});
+		
+			lastClickedIdx = i;
+		}
+		else { //if you reclicked the previous click, clear the last clicked index like the page is new
+			lastClickedIdx = undefined;
+		}
+		
+	}
 }

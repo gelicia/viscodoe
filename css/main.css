@@ -1,0 +1,11 @@
+body {
+	background-color: #E0E4CC;
+}
+
+h1.loading {
+	color: #8F4F1C;
+}
+
+p.inst {
+	display: none;
+}

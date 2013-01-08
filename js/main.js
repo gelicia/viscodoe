@@ -1,7 +1,20 @@
 /*global Miso,_,d3,document*/
 
 /*
- this is not generic for now, make it generic later!
+Kristina Durivage's entry to 'Visualize the State of Public Education in Colorado'
+https://www.kaggle.com/c/visualize-the-state-of-education-in-colorado
+*/
+
+/* todo
+	Move styling to CSS?
+	get FRL to transition like pop
+	Deal with schools with less than 3 years data (ie 29, 48)
+	get school grades in
+	get school details in 
+*/
+
+/*
+ add new information to the main info array, indexed by school number
 */
 Array.prototype.addNewInfo = function(newItem, newInfoCol, newColName) {
 	for (var i = 0; i < this.length; i++) {
@@ -46,6 +59,12 @@ function loadDataset () {
 		delimiter : ","
 	});
 
+	var grd2010 = new Miso.Dataset({
+		url : "data/2010/2010_kaggle/2010_final_grade.csv",
+		delimiter : ","
+	});
+
+
 	//2011
 	var pop2011 = new Miso.Dataset({
 		url : "data/2011/2011_enrl_working.csv",
@@ -57,6 +76,11 @@ function loadDataset () {
 		delimiter : ","
 	});
 
+	var grd2011 = new Miso.Dataset({
+		url : "data/2011/2011_final_grade.csv",
+		delimiter : ","
+	});
+
 	//2012
 	var pop2012 = new Miso.Dataset({
 		url : "data/2012/2012_enrl_working.csv",
@@ -65,6 +89,11 @@ function loadDataset () {
 
 	var frl2012 = new Miso.Dataset({
 		url : "data/2012/2012_k_12_FRL.csv",
+		delimiter : ","
+	});
+
+	var grd2012 = new Miso.Dataset({
+		url : "data/2011/2012_final_grade.csv",
 		delimiter : ","
 	});
 
@@ -176,6 +205,7 @@ function loadDataset () {
 	).then(
 		function(){
 			document.getElementById("loading").style.display = 'none';
+			document.getElementById("instructions").style.display = 'block';
 			drawPage();
 		}
 	);
@@ -183,18 +213,29 @@ function loadDataset () {
 
 function drawPage(){
 	//widths
-	var pageWidth = 1000;
+
+	//page width needs to be bigger than maxBarWidth so the labels can fit
+	var pageWidth = 1500;
+	var maxBarWidth = 1000;
 	var singleInfoBarWidth = 20;
 	var numInfoPoints = 3;
 	var barMargin = 5; 
 
-	//colors
+	//bar colors
 	var populationColor = "#69D2E7";
 	var populationDarkColor = "#57AFC0";
 	var frlColor = "#F18911"; 
 	var frlDarkColor = "#C7710E";
 
+	//text 
+	var textColor = "#8F4F1C";
+	var textDarkColor = "#694223";
+	var fontSize = 14;
 
+	//other
+	var backgroundColor = "#E0E4CC";
+
+	//in the drawn part of the chart, we care about population/FRL averages
 	for (var i = 0; i < allSchInfo.length; i++) {
 		var populations = [];
 		var frlTotals = [];
@@ -225,8 +266,9 @@ function drawPage(){
 
 	var svg = d3.select("svg")
 		.attr("width", pageWidth)
-		.attr("height", allSchInfo.length * (singleInfoBarWidth + barMargin));
+		.attr("height", allSchInfo.length * (singleInfoBarWidth + barMargin) + (singleInfoBarWidth * numInfoPoints));
 
+	//get the largest population number to establish domain
 	var pop2010Max = d3.max(allSchInfo, function(d10) {
 		return d10.pop2010Total;
 	});
@@ -241,7 +283,56 @@ function drawPage(){
 
 	var barWidth = d3.scale.linear()
 		.domain([0, popMax])
-		.range([0, pageWidth]);
+		.range([0, maxBarWidth]);
+
+	//Write text labels - do this first to establish baseline for bars as the maximum width of the label
+	var lbls = svg.selectAll("text.barLbl").data(allSchInfo);
+
+	lbls.enter()
+		.append("text")
+		.text(function(d){
+			return d.schoolNum + " - " + d.schoolName;
+		})
+		.attr({
+			y: function(d, i){
+				return (i * (singleInfoBarWidth + barMargin)) + (singleInfoBarWidth/2);
+			},
+			fill: textColor,
+			"font-family" : "sans-serif",
+			"font-size": fontSize,
+			"text-anchor": "end",
+			"dominant-baseline": "middle",
+			id: function(d,i){
+				return "barLbl" + i;
+			}
+		})
+		.classed("barLbl", true)
+		.classed("unclicked", true)		
+		.on("mouseover", function (d, i) {
+			mouseOverBars(i);
+		})
+		.on("mouseout", function (d, i) {
+			mouseOutBars(i);
+		})
+		.on("click", function (d, i){
+			clickBar(i);
+		});
+
+	//there's probably a better way to find the largest text width
+	var maxTextWidth = 0;
+
+	d3.selectAll(".barLbl")
+		.each(function(){
+			var textWidth = this.getComputedTextLength();
+			if (textWidth > maxTextWidth){
+				maxTextWidth = textWidth;
+			}
+		});
+
+	d3.selectAll(".barLbl")
+		.attr({
+			x: maxTextWidth
+		});
 
 //popBars
 	var popBars = svg.selectAll("rect.popBars").data(allSchInfo);
@@ -253,6 +344,7 @@ function drawPage(){
 				return barWidth(d.avgPopTotal);
 			},
 			height: singleInfoBarWidth, 
+			x: maxTextWidth + 3,
 			y: function (d, i) {
 				return i * (singleInfoBarWidth + barMargin);
 			}, 
@@ -264,10 +356,10 @@ function drawPage(){
 		.classed("popBars", true)
 		.classed("unclicked", true)
 		.on("mouseover", function (d, i) {
-			mouseOverBars(i, "pop");
+			mouseOverBars(i);
 		})
 		.on("mouseout", function (d, i) {
-			mouseOutBars(i, "pop");
+			mouseOutBars(i);
 		})
 		.on("click", function (d, i){
 			clickBar(i);
@@ -283,6 +375,7 @@ function drawPage(){
 				return barWidth((d.avgFRLTotal/100) * d.avgPopTotal);
 			},
 			height: singleInfoBarWidth, 
+			x: maxTextWidth + 3,
 			y: function (d, i) {
 				return i * (singleInfoBarWidth + barMargin);
 			}, 
@@ -294,27 +387,19 @@ function drawPage(){
 		.classed("frlBars", true)
 		.classed("unclicked", true)
 		.on("mouseover", function (d, i) {
-			mouseOverBars(i, "frl");
+			mouseOverBars(i);
 		})
 		.on("mouseout", function (d, i) {
-			mouseOutBars(i, "frl");
+			mouseOutBars(i);
 		})
 		.on("click", function (d, i){
 			clickBar(i); 
 		});
 
-	function mouseOverBars(i, type){
-		var base;
-		if (type == "pop") {
-			base = "popBar";
-		}
-		else {
-			base = "frlBar";
-		}
-
-		var className = document.getElementById(base + i).className.baseVal;
+	function mouseOverBars(i){
+		var className = document.getElementById("popBar" + i).className.baseVal;
 		//alert(className);
-		if (className == base + "s unclicked"){
+		if (className == "popBars unclicked"){
 			svg.selectAll("#popBar" + i)
 				.attr({
 					fill: populationDarkColor//populationMouseOverColor
@@ -323,21 +408,17 @@ function drawPage(){
 				.attr({
 					fill: frlDarkColor//frlMouseOverColor
 				});
+			svg.selectAll("#barLbl" + i)
+				.attr({
+					fill: textDarkColor
+				});
 		}
 	}
 
-	function mouseOutBars(i, type){
-		var base;
-		if (type == "pop") {
-			base = "popBar";
-		}
-		else {
-			base = "frlBar";
-		}
-
-		var className = document.getElementById(base + i).className.baseVal;
+	function mouseOutBars(i){
+		var className = document.getElementById("popBar" + i).className.baseVal;
 		//alert(className);
-		if (className == base + "s unclicked"){
+		if (className == "popBars unclicked"){
 			svg.selectAll("#popBar" + i)
 				.attr({
 					fill: populationColor
@@ -345,6 +426,10 @@ function drawPage(){
 			svg.selectAll("#frlBar" + i)
 				.attr({
 					fill: frlColor
+				});
+			svg.selectAll("#barLbl" + i)
+				.attr({
+					fill: textColor
 				});
 		}
 	}
@@ -354,10 +439,16 @@ function drawPage(){
 	click bar post clicking bar
 	second click bar to close bar*/
 	function clickBar(i){
+		/*alert("2010: " + ((allSchInfo[i].frlPercent2010/100) * allSchInfo[i].pop2010Total) + " / " + allSchInfo[i].pop2010Total + 
+			" 2011: " + ((allSchInfo[i].frlPercent2011/100) * allSchInfo[i].pop2011Total) + " / " + allSchInfo[i].pop2011Total+ 
+			" 2012: " + ((allSchInfo[i].frlPercent2012/100) * allSchInfo[i].pop2012Total) + " / " + allSchInfo[i].pop2012Total);
+		*/
+
 		//unclick previous, if exists or if it's a bar's second click
 		if (lastClickedIdx !== undefined || (lastClickedIdx == i)){
 			svg.selectAll(".popBarDetail").remove();
 			svg.selectAll(".frlBarDetail").remove();
+			svg.selectAll(".popBarDetText").remove();
 
 			svg.selectAll("#popBar" + lastClickedIdx)
 				.classed("clicked", false)
@@ -393,7 +484,6 @@ function drawPage(){
 		//move those that were not clicked out of the way of the expanding clicked bar
 		var notClicked;
 
-
 		if (lastClickedIdx == i){ //if second click, then all are not clicked
 			notClicked = popBars;
 		}
@@ -405,7 +495,10 @@ function drawPage(){
 			);
 		}
 
-		notClicked.transition()
+		notClicked
+			.classed("clicked", false)
+			.classed("unclicked", true)
+			.transition()
 			.duration(1000)
 			.ease("bounce")
 			.attr({
@@ -437,7 +530,10 @@ function drawPage(){
 			);
 		}
 
-		notClicked.transition()
+		notClicked
+			.classed("clicked", false)
+			.classed("unclicked", true)
+			.transition()
 			.duration(1000)
 			.ease("bounce")
 			.attr({
@@ -456,11 +552,43 @@ function drawPage(){
 				fill: frlColor
 			});
 
+		if (lastClickedIdx == i){
+			notClicked = lbls;
+		}
+		else {
+			notClicked = lbls.filter(
+				function(dIn, iIn){
+					return iIn != i;
+				}
+			);
+		}
+
+		notClicked
+			.classed("clicked", false)
+			.classed("unclicked", true)
+			.transition()
+			.duration(1000)
+			.ease("bounce")
+			.attr({
+				y: function (dy, iy) {
+					if (i == lastClickedIdx){
+						return (iy * (singleInfoBarWidth + barMargin)) + (singleInfoBarWidth/2);
+					}
+					else if (iy > (i-1)){
+						return (iy * (singleInfoBarWidth + barMargin)) + (singleInfoBarWidth/2) + ((singleInfoBarWidth * numInfoPoints) + barMargin);
+					}
+					else {
+						return (iy * (singleInfoBarWidth + barMargin)) + (singleInfoBarWidth/2);
+					}
+				},
+				fill: textColor
+			});	
+
 		//Run click logic - if bar's second click, nothing is clicked
 		if (lastClickedIdx != i){
 			//svg does not support z-index, go from back to front
 			//darkened average population bar and widen
-			svg.selectAll("#popBar" + i)
+			svg.select("#popBar" + i)
 				.classed("clicked", true)
 				.classed("unclicked", false)
 				.transition()
@@ -470,54 +598,113 @@ function drawPage(){
 					height: (singleInfoBarWidth * numInfoPoints),
 					y : i * (singleInfoBarWidth + barMargin),
 					fill: populationDarkColor
+				}),
+			
+			//Move label to stay centered	
+			svg.select("#barLbl" + i)
+				.classed("clicked", true)
+				.classed("unclicked", false)
+				.transition()
+				.duration(1000)
+				.ease("bounce")
+				.attr({
+					y: (i * (singleInfoBarWidth + barMargin)) + ((numInfoPoints * singleInfoBarWidth)/2)
 				});
-				
 
 			//second add detailPopBars
+			//all bars start at 2010 and grow down and away the average
+
+			//2010
 			svg.append("rect")
 				.classed("popBarDetail", true)
 				.attr({
-					height: singleInfoBarWidth, 
+					height: singleInfoBarWidth,
+					x: maxTextWidth + 3, 
 					y: i * (singleInfoBarWidth + barMargin), 
-					fill : populationColor,
+					fill : populationDarkColor,
+					width : barWidth(allSchInfo[i].avgPopTotal),
 					id: "detPopBar2010" + i
 				})
 				.transition()
 				.duration(1000)
 				.ease("bounce")
 				.attr({
-					width : barWidth(allSchInfo[i].pop2010Total)
+					width : barWidth(allSchInfo[i].pop2010Total),
+					fill : populationColor
 				});
-				
+
+			svg.append("text")
+				.classed("popBarDetText", true)
+				.attr({
+					x:  maxTextWidth + 3 + barWidth((allSchInfo[i].pop2010Total > allSchInfo[i].avgPopTotal ? allSchInfo[i].pop2010Total : allSchInfo[i].avgPopTotal)),
+					y: (i * (singleInfoBarWidth + barMargin)) + fontSize,
+					id: "barLbl2010"
+				});
+
+			//this is extracted how it is to keep whatever doesn't need to be different by year (like the y coord) out
+			appendDetailLabels(d3.select("#barLbl2010"), "2010", i);
+
+			//2011	
 			svg.append("rect")
 				.classed("popBarDetail", true)
 				.attr({
 					height: singleInfoBarWidth, 
-					y: i * (singleInfoBarWidth + barMargin) + singleInfoBarWidth, 
-					fill : populationColor,
+					x: maxTextWidth + 3,
+					y: i * (singleInfoBarWidth + barMargin), 
+					fill : populationDarkColor,
+					width : barWidth(allSchInfo[i].avgPopTotal),
 					id: "detPopBar2011" + i
 				})
 				.transition()
 				.duration(1000)
 				.ease("bounce")
 				.attr({
-					width : barWidth(allSchInfo[i].pop2011Total)
+					y: i * (singleInfoBarWidth + barMargin) + singleInfoBarWidth,
+					width : barWidth(allSchInfo[i].pop2011Total),
+					fill : populationColor
 				});
 
+			svg.append("text")
+				.classed("popBarDetText", true)
+				.attr({
+					fill: backgroundColor,
+					x: maxTextWidth + 3 + barWidth((allSchInfo[i].pop2011Total > allSchInfo[i].avgPopTotal ? allSchInfo[i].pop2011Total : allSchInfo[i].avgPopTotal)),
+					y: (i * (singleInfoBarWidth + barMargin)) + fontSize + singleInfoBarWidth,
+					id: "barLbl2011"
+				});
+
+			appendDetailLabels(d3.select("#barLbl2011"), "2011", i);
+
+			//2012
 			svg.append("rect")
 				.classed("popBarDetail", true)
 				.attr({
 					height: singleInfoBarWidth, 
-					y: i * (singleInfoBarWidth + barMargin) + (singleInfoBarWidth * 2), 
-					fill : populationColor,
+					x: maxTextWidth + 3,
+					y: i * (singleInfoBarWidth + barMargin),
+					width : barWidth(allSchInfo[i].avgPopTotal), 
+					fill : populationDarkColor,
 					id: "detPopBar2012" + i
 				})
 				.transition()
 				.duration(1000)
 				.ease("bounce")
 				.attr({
-					width : barWidth(allSchInfo[i].pop2012Total)
+					y: i * (singleInfoBarWidth + barMargin) + (singleInfoBarWidth * 2),
+					width : barWidth(allSchInfo[i].pop2012Total),
+					fill : populationColor
 				});
+
+			svg.append("text")
+				.classed("popBarDetText", true)
+				.attr({
+					fill: backgroundColor,
+					x: maxTextWidth + 3 + barWidth((allSchInfo[i].pop2012Total > allSchInfo[i].avgPopTotal ? allSchInfo[i].pop2012Total : allSchInfo[i].avgPopTotal)),
+					y: (i * (singleInfoBarWidth + barMargin)) + fontSize + (singleInfoBarWidth * 2),
+					id: "barLbl2012"
+				});
+
+			appendDetailLabels(d3.select("#barLbl2012"), "2012", i);
 
 			//third, move the frlBar for the clicked bar to the front, then widen and darken
 			svg.selectAll("#frlBar" + i).moveToFront();
@@ -535,48 +722,63 @@ function drawPage(){
 				});
 
 			//fourth, detailed frl
+			//2010
 			svg.append("rect")
 				.classed("frlBarDetail", true)
 				.attr({
 					height: singleInfoBarWidth, 
+					width : barWidth((allSchInfo[i].avgFRLTotal/100) * allSchInfo[i].pop2010Total),
+					x: maxTextWidth + 3,
 					y: i * (singleInfoBarWidth + barMargin), 
-					fill : frlColor,
+					fill : frlDarkColor,
 					id: "detFrlBar2010" + i
 				})
 				.transition()
 				.duration(1000)
 				.ease("bounce")
 				.attr({
+					fill: frlColor,
 					width : barWidth((allSchInfo[i].frlPercent2010/100) * allSchInfo[i].pop2010Total)
+
 				});
-				
+			
+			//2011	
 			svg.append("rect")
 				.classed("frlBarDetail", true)
 				.attr({
 					height: singleInfoBarWidth, 
-					y: i * (singleInfoBarWidth + barMargin) + singleInfoBarWidth, 
-					fill : frlColor,
+					width : barWidth((allSchInfo[i].avgFRLTotal/100) * allSchInfo[i].pop2010Total),
+					x: maxTextWidth + 3,
+					y: i * (singleInfoBarWidth + barMargin), 
+					fill : frlDarkColor,
 					id: "detFrlBar2011" + i
 				})
 				.transition()
 				.duration(1000)
 				.ease("bounce")
 				.attr({
+					y: i * (singleInfoBarWidth + barMargin) + singleInfoBarWidth, 
+					fill: frlColor,
 					width : barWidth((allSchInfo[i].frlPercent2011/100) * allSchInfo[i].pop2011Total)
 				});
 
+			//2012
 			svg.append("rect")
 				.classed("frlBarDetail", true)
 				.attr({
 					height: singleInfoBarWidth, 
-					y: i * (singleInfoBarWidth + barMargin) + (singleInfoBarWidth * 2), 
-					fill : frlColor,
+					width : barWidth((allSchInfo[i].avgFRLTotal/100) * allSchInfo[i].pop2010Total),
+					x: maxTextWidth + 3,
+					y: i * (singleInfoBarWidth + barMargin), 
+					fill : frlDarkColor,
 					id: "detFrlBar2012" + i
 				})
 				.transition()
 				.duration(1000)
 				.ease("bounce")
 				.attr({
+					y: i * (singleInfoBarWidth + barMargin) + (singleInfoBarWidth * 2), 
+					fill: frlColor,
 					width : barWidth((allSchInfo[i].frlPercent2012/100) * allSchInfo[i].pop2012Total)
 				});
 		
@@ -586,5 +788,65 @@ function drawPage(){
 			lastClickedIdx = undefined;
 		}
 		
+	}
+
+	function appendDetailLabels(barLbl, year, i){
+		var detailFontSize = 10;
+
+		barLbl.append("tspan")
+			.text(year + " ")
+			.attr({
+				fill: textColor,
+				"fill-opacity": 0.0001,
+				"font-weight": "bold"
+			})
+			.transition()
+			.duration(1000)
+			.ease("linear")
+			.attr({
+				"fill-opacity": 1
+			});
+
+		barLbl.append("tspan")
+			.text(Math.round((allSchInfo[i]["frlPercent" + year]/100) * allSchInfo[i]["pop" + year + "Total"]))
+			.attr({
+				fill: frlDarkColor,
+				"fill-opacity": 0.0001,
+				"font-size" : 10
+			})
+			.transition()
+			.duration(1000)
+			.ease("linear")
+			.attr({
+				"fill-opacity": 1
+			});
+
+		barLbl.append("tspan")
+			.text("/")
+			.attr({
+				fill: textColor,
+				"fill-opacity": 0.0001,
+				"font-size" : 10
+			})
+			.transition()
+			.duration(1000)
+			.ease("linear")
+			.attr({
+				"fill-opacity": 1
+			});
+
+		barLbl.append("tspan")
+			.text(allSchInfo[i]["pop" + year + "Total"])
+			.attr({
+				fill: populationDarkColor,
+				"fill-opacity": 0.0001,
+				"font-size" : detailFontSize
+			})
+			.transition()
+			.duration(1000)
+			.ease("linear")
+			.attr({
+				"fill-opacity": 1 
+			});
 	}
 }

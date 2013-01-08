@@ -3,15 +3,19 @@
 <head>
   <title>Colorado School Visualization</title>
   <meta http-equiv="Content-Type" content="text/html;charset=utf-8" >
+  <link rel="stylesheet" type="text/css" href="css/main.css">
 </head>
 <body onLoad="loadDataset()">
 	<div id="content">
-		<h1 id="loading">Loading Data...</h1>
+		<h1 id="loading" class="loading">Loading Data...</h1>
+		<p id="instructions" class="inst">There is one bar per school. The blue bar represents the population of the school - orange is the percentage of that population on the Free/Reduced Lunch population. Click a bar to expand and see data by year.</p>
 	</div>
 	<svg/>
 <!-- web browser version-->
   <script src="js/lib/miso.ds.deps.ie.min.0.4.0.js"></script>
-  <script src="http://d3js.org/d3.v3.min.js"></script>
+  <!--<script src="http://d3js.org/d3.v3.min.js"></script>-->
+  <script src="js/lib/d3.v3.min.js"></script>
+
   <!-- Your application code -->
   <script src="js/main.js"></script>
 </body>

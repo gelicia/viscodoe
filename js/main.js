@@ -8,10 +8,8 @@ https://www.kaggle.com/c/visualize-the-state-of-education-in-colorado
 /* todo
 	document data file cleanup that was needed
 	Move styling to CSS?
-	make it easier to close 
-	make svg width larger see 1752
-	add district into info for sorting
-	grades formatting
+	grade transitions
+	bug: undefined then grade is shown as an improvement
 	sorting/ schoolsubselect
 	sort by variance, district(?), population, poorest then performing
 
@@ -22,15 +20,30 @@ https://www.kaggle.com/c/visualize-the-state-of-education-in-colorado
 	the one where the data was not averaged
 */
 
-/*
- add new information to the main info array, indexed by school number
-*/
+
+// add new information to the main info array, indexed by school number
+
 Array.prototype.addNewInfo = function(newItem, newInfoCol, newColName) {
 	for (var i = 0; i < this.length; i++) {
 		if (this[i].schoolNum == newItem.schoolNum){
 			this[i][newColName] = newItem[newInfoCol];
 		}
 	}
+};
+
+//Check if info exists, by school number
+Array.prototype.exists = function(key, field){
+	for (var i = 0; i < this.length; i++) {
+		if (this[i].schoolNum == key){
+			if (this[i][field] !== undefined){
+				return true;
+			}
+			else {
+				return false;
+			}
+		}
+	}
+	return false;
 };
 
 Array.prototype.avg = function() {
@@ -155,8 +168,14 @@ function loadDataset () {
 						var schInfo = {};
 						schInfo.schoolNum = row['SCHOOL CODE'];
 						schInfo.totalPop = row.TOTAL;
+						schInfo.districtNum = row['Org. Code'];
+						schInfo.districtName = row['Organization Name'];
 
 						allSchInfo.addNewInfo(schInfo, 'totalPop', 'pop2010Total');
+						allSchInfo.addNewInfo(schInfo, 'districtNum', 'districtNum');
+						allSchInfo.addNewInfo(schInfo, 'districtName', 'districtName');
+
+
 					}
 				);
 			}
@@ -203,6 +222,14 @@ function loadDataset () {
 						schInfo.totalPop = row.TOTAL;
 
 						allSchInfo.addNewInfo(schInfo, 'totalPop', 'pop2011Total');
+
+						if (allSchInfo.exists(schInfo.schoolNum, "districtNum") === false){
+							schInfo.districtNum = row['Org. Code'];
+							schInfo.districtName = row['Organization Name'];
+
+							allSchInfo.addNewInfo(schInfo, 'districtNum', 'districtNum');
+							allSchInfo.addNewInfo(schInfo, 'districtName', 'districtName');
+						}
 					}
 				);
 			}
@@ -247,6 +274,14 @@ function loadDataset () {
 						schInfo.totalPop = row.TOTAL;
 
 						allSchInfo.addNewInfo(schInfo, 'totalPop', 'pop2012Total');
+
+						if (allSchInfo.exists(schInfo.schoolNum, "districtNum") === false){
+							schInfo.districtNum = row['Organization Code'];
+							schInfo.districtName = row['Organization Name'];
+
+							allSchInfo.addNewInfo(schInfo, 'districtNum', 'districtNum');
+							allSchInfo.addNewInfo(schInfo, 'districtName', 'districtName');
+						}
 					}
 				);
 			}
@@ -297,8 +332,8 @@ function drawPage(){
 	//widths
 
 	//page width needs to be bigger than maxBarWidth so the labels can fit
-	var pageWidth = 1500;
-	var maxBarWidth = 1000;
+	var pageWidth = 2000;
+	var maxBarWidth = 850;
 	var singleInfoBarWidth = 20;
 	var maxNumInfoPoints = 3;
 	var barMargin = 5; 
@@ -570,36 +605,12 @@ function drawPage(){
 	function clickBar(i){
 		//we don't care about a year if it doesn't have a population
 		var numPopInfoPoints = 0;
-		//if FRL Info points is less, then make all undefined = 0
-		//var numFRLInfoPoints = 0;
-		
+
 		for(var prop in allSchInfo[i]){
 			if (prop.substring(0, 3) == "pop"){
 				numPopInfoPoints += 1;
 			}
-			//else if (prop.substring(0, 10) == "frlPercent"){
-			//	numFRLInfoPoints += 1;
-			//}
 		}
-
-		/*if (numFRLInfoPoints < numPopInfoPoints){
-			if (allSchInfo[i].frlPercent2010 === undefined){
-				allSchInfo[i].frlPercent2010 = 0;
-			}
-			if (allSchInfo[i].frlPercent2011 === undefined){
-				allSchInfo[i].frlPercent2011 = 0;
-			}
-			if (allSchInfo[i].frlPercent2012 === undefined){
-				allSchInfo[i].frlPercent2012 = 0;
-			}
-		}*/
-
-
-
-		/*alert("2010: " + ((allSchInfo[i].frlPercent2010/100) * allSchInfo[i].pop2010Total) + " / " + allSchInfo[i].pop2010Total + 
-			" 2011: " + ((allSchInfo[i].frlPercent2011/100) * allSchInfo[i].pop2011Total) + " / " + allSchInfo[i].pop2011Total+ 
-			" 2012: " + ((allSchInfo[i].frlPercent2012/100) * allSchInfo[i].pop2012Total) + " / " + allSchInfo[i].pop2012Total);
-		*/
 
 		//unclick previous, if exists or if it's a bar's second click
 		if (lastClickedIdx !== undefined || (lastClickedIdx == i)){
@@ -607,6 +618,8 @@ function drawPage(){
 			svg.selectAll(".frlBarDetail").remove();
 			svg.selectAll(".popBarDetText").remove();
 			svg.selectAll(".grdDetText").remove();
+			svg.selectAll(".grdDetLbls").remove();
+			svg.select(".grdDetLine").remove();
 
 			svg.selectAll("#popBar" + lastClickedIdx)
 				.classed("clicked", false)
@@ -695,7 +708,6 @@ function drawPage(){
 			});
 
 		//think this has to be done like this because the indexes for the two sets of bars are the same
-		//TODO I can't get it to unclick both sets at once
 		if (lastClickedIdx == i){
 			notClicked = frlBars;
 		}
@@ -1026,6 +1038,8 @@ function drawPage(){
 
 			//fifth - grade detail information
 			//goes avg by year, detail by year, line, average overall 
+			//do it in that order to get the text length 
+
 			var maxBar = d3.max([allSchInfo[i].pop2010Total, allSchInfo[i].pop2011Total, allSchInfo[i].pop2012Total]);
 			var maxLbl = 0;
 
@@ -1051,7 +1065,7 @@ function drawPage(){
 						id: "grdLbl2010"
 					});
 
-				appendGrdDetailLabels(d3.select("#grdLbl2010"), "2010", i);
+				appendGrdYearAvgLabel(d3.select("#grdLbl2010"), "2010", i);
 			}
 
 			//2011
@@ -1066,7 +1080,7 @@ function drawPage(){
 						id: "grdLbl2011"
 					});
 
-				appendGrdDetailLabels(d3.select("#grdLbl2011"), "2011", i);
+				appendGrdYearAvgLabel(d3.select("#grdLbl2011"), "2011", i);
 			}
 
 			//2012
@@ -1081,27 +1095,64 @@ function drawPage(){
 						id: "grdLbl2012"
 					});
 
-				appendGrdDetailLabels(d3.select("#grdLbl2012"), "2012", i);
+				appendGrdYearAvgLabel(d3.select("#grdLbl2012"), "2012", i);
 			}
-			
+
+			//details
+			var startNextLbl = 0;
+
+			d3.selectAll(".avgGrade")
+				.each(function(){
+					var textWidth = this.getComputedTextLength();
+					if (textWidth > startNextLbl){
+						startNextLbl = textWidth;
+					}
+			});
+
+			//2010
+			appendGrdDetailLabels(d3.select("#grdLbl2010"), "2010", i, startNextLbl);
+			//2011
+			appendGrdDetailLabels(d3.select("#grdLbl2011"), "2011", i, startNextLbl);
+			//2012
+			appendGrdDetailLabels(d3.select("#grdLbl2012"), "2012", i, startNextLbl);
+
+			//draw a line seperating details from overall average if there is grade information
+			if (svg.select("#grdLbl" + i).node().textContent !== "") {
+				if (!d3.select(".grdDetLbls").empty()){
+					maxLbl = 0;
+
+					d3.selectAll(".grdDetLbls")
+					.each(function(){
+						var textWidth = this.getComputedTextLength();
+						if (textWidth > maxLbl){
+							maxLbl = textWidth;
+						}
+					});
+
+					maxLbl += Number(d3.select(".grdDetLbls").attr("x"));
+				}
+				else {
+					maxLbl = grdDetX + startNextLbl;
+				}
+
+				svg.append("line")
+					.classed("grdDetLine", true)
+					.attr({
+						//all grdDetLbls x values will be the same, just select the first one
+						"x1": maxLbl + 3,
+						"y1": i * (singleInfoBarWidth + barMargin),
+						"x2": maxLbl + 3,
+						"y2": i * (singleInfoBarWidth + barMargin) + (singleInfoBarWidth * numPopInfoPoints)
+					})
+					.style("stroke", textColor);
+			}
+
 			// move average to leftmost
 			svg.select("#grdLbl" + i)
 				.classed("clicked", true)
 				.classed("unclicked", false)
 				.attr({
-					x: function(){
-						var maxLbl = 0;
-
-						d3.selectAll(".grdDetText")
-						.each(function(){
-							var textWidth = this.getComputedTextLength();
-							if (textWidth > maxLbl){
-								maxLbl = textWidth;
-							}
-						});
-						//alert(maxLbl);
-						return grdDetX +  maxLbl + this.getComputedTextLength() + 3;
-					},
+					x: maxLbl + d3.select("#grdLbl" + i).node().getComputedTextLength() + 6,
 					y: (i * (singleInfoBarWidth + barMargin)) + ((numPopInfoPoints * singleInfoBarWidth)/2),
 					"fill-opacity" : 0.0001
 				})
@@ -1203,29 +1254,18 @@ function drawPage(){
 
 	}
 
-	function appendGrdDetailLabels(barLbl, year, i){
-		var detailFontSize = 10;
+	function appendGrdYearAvgLabel(barLbl, year, i){
 		var improveGradeColor = "#23B23C";
 		var declineGradeColor = "#D9472B";
 
 		//in it's own method to get prev years easily
 		var lblStr = getLblStr(year, i);
-		var lblDetStrs = [];
-
-
-		if (allSchInfo[i]["gradeE" + year] !== undefined){
-			lblDetStrs.push({grade : allSchInfo[i]["gradeE" + year], level : "E"});
-		}
-		if (allSchInfo[i]["gradeM" + year] !== undefined){
-			lblDetStrs.push({grade : allSchInfo[i]["gradeM" + year], level : "M"});
-		}
-		if (allSchInfo[i]["gradeH" + year] !== undefined){
-			lblDetStrs.push({grade : allSchInfo[i]["gradeH" + year], level : "H"});
-		}
 
 		barLbl.append("tspan")
 			.text(Number(lblStr).toLetterGrade())
+			.classed("avgGrade", true)
 			.attr({
+				id : "avgGrade" + year,
 				fill: function(){
 					if(year == 2010){
 						return textColor;
@@ -1253,12 +1293,49 @@ function drawPage(){
 			.attr({
 				"fill-opacity": 1
 			});
+	}
+
+	function appendGrdDetailLabels(barLbl, year, i, startNextLbl){
+		var lblDetStrs = [];
+
+		if (allSchInfo[i]["gradeE" + year] !== undefined){
+			lblDetStrs.push({grade : allSchInfo[i]["gradeE" + year], level : "E"});
+		}
+		if (allSchInfo[i]["gradeM" + year] !== undefined){
+			lblDetStrs.push({grade : allSchInfo[i]["gradeM" + year], level : "M"});
+		}
+		if (allSchInfo[i]["gradeH" + year] !== undefined){
+			lblDetStrs.push({grade : allSchInfo[i]["gradeH" + year], level : "H"});
+		}
 
 		if (lblDetStrs.length > 1){
+			var detailFontSize = 10;
+			var improveGradeColor = "#23B23C";
+			var declineGradeColor = "#D9472B";
+
+			
+
+			barLbl.append("tspan")
+				.classed("grdDetLbls" , true)
+				.attr({
+					id: "grdDet" + year,
+					x: Number(barLbl.attr("x")) + Number(startNextLbl)
+				});
+
+			var yrGrdLine = svg.select("#grdDet" + year);
+
 			for (var j = 0; j < lblDetStrs.length; j++) {
-				barLbl.append("tspan")
+				yrGrdLine.append("tspan")
 				.text(" " + Number(lblDetStrs[j].grade).toLetterGrade() + "(" + lblDetStrs[j].level + ")")
 				.attr({
+					x: function(){
+						if (j === 0){
+							return Number(barLbl.attr("x")) + Number(startNextLbl);
+						}
+						else {
+							return Number(d3.select("#grdDet" + lblDetStrs[j-1].level + year).attr("x")) + d3.select("#grdDet" + lblDetStrs[j-1].level + year).node().getComputedTextLength();
+						}
+					},
 					fill: function(){
 						var lastDetStr  = allSchInfo[i]["grade"  + lblDetStrs[j].level + (year - 1)];
 
@@ -1273,7 +1350,8 @@ function drawPage(){
 						}
 					},
 					"fill-opacity": 0.0001,
-					"font-size" : detailFontSize
+					"font-size" : detailFontSize,
+					id : "grdDet" + lblDetStrs[j].level + year
 				})
 				.transition()
 				.duration(1000)
@@ -1283,6 +1361,5 @@ function drawPage(){
 				});
 			}
 		}
-
 	}
 }

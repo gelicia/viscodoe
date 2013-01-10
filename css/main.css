@@ -6,6 +6,6 @@ h1.loading {
 	color: #8F4F1C;
 }
 
-p.inst {
+p.inst p.selectionOptions {
 	display: none;
 }

@@ -1,23 +1,22 @@
-/*global Miso,_,d3,document*/
+/*global Miso,_,d3,document,$*/
 
 /*
 Kristina Durivage's entry to 'Visualize the State of Public Education in Colorado'
 https://www.kaggle.com/c/visualize-the-state-of-education-in-colorado
+
+If something is done very wrong here, please let me know. I am (kind of) new at this! 
 */
 
 /* todo
 	document data file cleanup that was needed
-	Move styling to CSS?
-	grade transitions
-	bug: undefined then grade is shown as an improvement
-	sorting/ schoolsubselect
-	sort by variance, district(?), population, poorest then performing
+	antialiasing to make stroke consistant
 
-	wont fix : -when avg frl is higher than one year's population, you can't see the 
+	wont fix : -when the avg frl is higher than one year's population, you can't see the 
 	year population when you expand it out
 	-When frl data does not exist for one year, the average is correct with the data 
-	that is there but the dark average bar still extends to all the years- even 
-	the one where the data was not averaged
+	that is there but the dark average bar still extends through all the years- even 
+	the one where there was no data to average
+	-styling should be in CSS
 */
 
 
@@ -88,6 +87,56 @@ d3.selection.prototype.moveToFront = function() {
 
 var allSchInfo = [];
 var lastClickedIdx;
+
+function changeSort(){
+	var orderBy = $('input[name=orderBy]:checked').val();
+
+	if(orderBy == 'schNumber'){
+		_.when(
+			schoolNumberSort()
+		).then(
+			d3.select("svg").remove(),
+			d3.select("body").append("svg"),
+			drawPage(undefined)
+		);
+	}
+	else if(orderBy == 'schName'){
+		_.when(
+			schoolAlphaSort()
+		).then(
+			d3.select("svg").remove(),
+			d3.select("body").append("svg"),
+			drawPage(undefined)
+		);
+	}
+	else if(orderBy == 'gradePop'){
+		_.when(
+			gradePopSort()
+		).then(
+			d3.select("svg").remove(),
+			d3.select("body").append("svg"),
+			drawPage(undefined)
+		);
+	}
+	else if(orderBy == 'distNameGradePop'){
+		_.when(
+			districtGradeSort()
+		).then(
+			d3.select("svg").remove(),
+			d3.select("body").append("svg"),
+			drawPage('districtNum')
+		);				
+	}
+	else if(orderBy == 'variance'){
+		_.when(
+			varianceSort()
+		).then(
+			d3.select("svg").remove(),
+			d3.select("body").append("svg"),
+			drawPage(undefined)
+		);
+	}
+}
 
 function loadDataset () {
 	var schList = new Miso.Dataset({
@@ -168,8 +217,8 @@ function loadDataset () {
 						var schInfo = {};
 						schInfo.schoolNum = row['SCHOOL CODE'];
 						schInfo.totalPop = row.TOTAL;
-						schInfo.districtNum = row['Org. Code'];
-						schInfo.districtName = row['Organization Name'];
+						schInfo.districtNum = row['DISTRICT CODE'];
+						schInfo.districtName = row['DISTRICT NAME'];
 
 						allSchInfo.addNewInfo(schInfo, 'totalPop', 'pop2010Total');
 						allSchInfo.addNewInfo(schInfo, 'districtNum', 'districtNum');
@@ -323,35 +372,14 @@ function loadDataset () {
 		function(){
 			document.getElementById("loading").style.display = 'none';
 			document.getElementById("instructions").style.display = 'block';
-			drawPage();
+			document.getElementById("selectionOptions").style.display = 'block';
+			prepDataset();
+			drawPage(undefined);
 		}
 	);
 }
 
-function drawPage(){
-	//widths
-
-	//page width needs to be bigger than maxBarWidth so the labels can fit
-	var pageWidth = 2000;
-	var maxBarWidth = 850;
-	var singleInfoBarWidth = 20;
-	var maxNumInfoPoints = 3;
-	var barMargin = 5; 
-
-	//bar colors
-	var populationColor = "#69D2E7";
-	var populationDarkColor = "#57AFC0";
-	var frlColor = "#F18911"; 
-	var frlDarkColor = "#C7710E";
-
-	//text 
-	var textColor = "#8F4F1C";
-	var textDarkColor = "#694223";
-	var fontSize = 14;
-
-	//other
-	var backgroundColor = "#E0E4CC";
-
+function prepDataset() {
 	//in the drawn part of the chart, we care about population/FRL averages
 	for (var i = 0; i < allSchInfo.length; i++) {
 		var populations = [];
@@ -378,10 +406,141 @@ function drawPage(){
 		allSchInfo[i].avgFRLTotal = frlTotals.avg().toFixed(2);
 		allSchInfo[i].avgGradeTotal = Math.round(grades.avg());
 	}
+}
+
+//sorts
+function schoolNumberSort() {
+	allSchInfo = _.sortBy(allSchInfo, function(schoolInfo){ return schoolInfo.schoolNum; });
+}
+
+function schoolAlphaSort() {
+	allSchInfo = _.sortBy(allSchInfo, function(schoolInfo){ return schoolInfo.schoolName; });
+}
+
+function districtGradeSort(){
+	allSchInfo = allSchInfo.sort(function (a,b){
+		if (a.districtName > b.districtName) return 1;
+		if (a.districtName < b.districtName) return -1;
+		if (a.avgGradeTotal < b.avgGradeTotal) return  1;
+		if (a.avgGradeTotal > b.avgGradeTotal) return -1;
+		if (a.avgPopTotal < b.avgPopTotal) return  1;
+		if (a.avgPopTotal > b.avgPopTotal) return -1;
+		return 0;
+	});
+}
+
+function gradePopSort() {
+	allSchInfo = allSchInfo.sort(function (a,b) {
+		if (a.avgGradeTotal < b.avgGradeTotal) return  1;
+		if (a.avgGradeTotal > b.avgGradeTotal) return -1;
+		if (a.avgPopTotal < b.avgPopTotal) return  1;
+		if (a.avgPopTotal > b.avgPopTotal) return -1;
+		return 0;
+	});
+}
+
+function varianceSort(){
+	allSchInfo = allSchInfo.sort(function (a,b){
+		var aVariance = 0;
+		var bVariance = 0;
+		if (a.avgGradeTotal !== undefined && b.avgGradeTotal !== undefined){
+			//swap these out
+			var yearOneGrade = getGrdByYear(2010, a);
+			var yearTwoGrade = getGrdByYear(2011, a);
+
+			if (yearOneGrade !== undefined && yearTwoGrade !== undefined){
+				aVariance += Math.abs(yearOneGrade - yearTwoGrade);
+			}
+			yearOneGrade = getGrdByYear(2012, a);
+			if (yearOneGrade !== undefined && yearTwoGrade !== undefined){
+				aVariance += Math.abs(yearTwoGrade - yearOneGrade);
+			}
+
+			yearOneGrade = getGrdByYear(2010, b);
+			yearTwoGrade = getGrdByYear(2011, b);
+
+			if (yearOneGrade !== undefined && yearTwoGrade !== undefined){
+				bVariance += Math.abs(yearOneGrade - yearTwoGrade);
+			}
+			yearOneGrade = getGrdByYear(2012, b);
+			if (yearOneGrade !== undefined && yearTwoGrade !== undefined){
+				bVariance += Math.abs(yearTwoGrade - yearOneGrade);
+			}
+
+		}
+
+		if (aVariance < bVariance) return 1;
+		if (aVariance > bVariance) return -1;
+		return 0;
+	});
+}
+
+function getGrdByYear(year, row){
+	var gradeByYr = [];
+
+	for(var prop in row){
+		if (prop.substring(0,5) == "grade" && prop.substring(6, prop.length) == year){
+			var schType = prop.substring(5, 6);
+			gradeByYr.push(row["grade" + schType + year]);
+		}
+	}
+
+	if (gradeByYr.length === 0){
+		return undefined;
+	}
+	else if (gradeByYr.length == 1){ //if only one, display that
+		return gradeByYr[0];
+	}
+	else {
+		return Math.round(gradeByYr.avg());
+	}
+}
+
+/* the subheading is done the worst way, but I am running out of time*/
+
+function drawPage(subheading){
+	//widths
+
+	//page width needs to be bigger than maxBarWidth so the labels can fit
+	var pageWidth = 2000;
+	var maxBarWidth = 850;
+	var singleInfoBarWidth = 20;
+	var maxNumInfoPoints = 3;
+	var barMargin = 5; 
+
+	//bar colors
+	var populationColor = "#69D2E7";
+	var populationDarkColor = "#57AFC0";
+	var frlColor = "#F18911"; 
+	var frlDarkColor = "#C7710E";
+
+	//text 
+	var textColor = "#8F4F1C";
+	var textDarkColor = "#694223";
+	var fontSize = 14;
+
+	//build Subheading info
+	var subHeadInfo = [];
+
+	if (subheading !== undefined){
+		if (subheading=='districtNum'){ //this will probably always be the same but I only need this for one thing atm so I am not sure
+			for (var i = 0; i < allSchInfo.length; i++) {
+				if (i === 0 || allSchInfo[i].districtNum !== allSchInfo[i-1].districtNum){
+					var distChg = {};
+					distChg.districtNum = allSchInfo[i].districtNum;
+					distChg.districtName = allSchInfo[i].districtName;
+					distChg.rowChg = i;
+					subHeadInfo.push(distChg);
+				}
+			}
+		}
+	}
 
 	var svg = d3.select("svg")
-		.attr("width", pageWidth)
-		.attr("height", allSchInfo.length * (singleInfoBarWidth + barMargin) + (singleInfoBarWidth * maxNumInfoPoints));
+		.attr({
+			width : pageWidth,
+			height : ((allSchInfo.length + subHeadInfo.length) * (singleInfoBarWidth + barMargin)) + (singleInfoBarWidth * maxNumInfoPoints)
+		}); 
 
 	//get the largest population number to establish domain
 	var pop2010Max = d3.max(allSchInfo, function(d10) {
@@ -405,6 +564,39 @@ function drawPage(){
 		.domain([0, popMax])
 		.range([0, maxBarWidth]);
 
+	//only used for subheadings
+	var offset = 1;
+	var nextChangeRow;
+
+	if(subHeadInfo.length !== 0){
+		for (var j = 0; j < subHeadInfo.length; j++) {
+			var distNum = subHeadInfo[j].districtNum;
+			var distName = subHeadInfo[j].districtName;
+			if (distNum === undefined) {
+				distNum = "0000";
+			}
+			if (distName === undefined) {
+				distNum = "District Not Defined";
+			}
+
+			var headText =  distNum + " - " + distName;
+
+			svg.append("text")
+				.text(headText)
+				.attr({
+					x : 0,
+					y: (j + subHeadInfo[j].rowChg) * (singleInfoBarWidth + barMargin) + 15,
+					fill: textColor,
+					"font-family" : "sans-serif",
+					"font-size": fontSize,
+					"font-weight": "bold",
+					id: "subHeadLbl" + j
+				});
+		}
+
+		nextChangeRow = subHeadInfo[offset].rowChg;	
+	}
+	 
 	//Write text labels - do this first to establish baseline for bars as the maximum width of the label
 	var barLbls = svg.selectAll("text.barLbl").data(allSchInfo);
 
@@ -415,6 +607,20 @@ function drawPage(){
 		})
 		.attr({
 			y: function(d, i){
+				if (subHeadInfo.length !== 0){
+					if(i >= nextChangeRow){
+						offset+=1;
+						if (subHeadInfo[offset] !== undefined){
+							nextChangeRow =subHeadInfo[offset].rowChg;	
+						}
+						else {
+							nextChangeRow = allSchInfo.length;
+						}
+					}
+
+					i +=  offset;
+				}
+
 				return (i * (singleInfoBarWidth + barMargin)) + (singleInfoBarWidth/2);
 			},
 			fill: textColor,
@@ -457,6 +663,11 @@ function drawPage(){
 //popBars
 	var popBars = svg.selectAll("rect.popBars").data(allSchInfo);
 
+	if(subHeadInfo.length !== 0){
+		offset = 1;
+		nextChangeRow = subHeadInfo[offset].rowChg;	
+	}
+
 	popBars.enter()
 		.append("rect")
 		.attr({
@@ -466,6 +677,20 @@ function drawPage(){
 			height: singleInfoBarWidth, 
 			x: maxTextWidth + 3,
 			y: function (d, i) {
+				if (subHeadInfo.length !== 0){
+					if(i >= nextChangeRow){
+						offset+=1;
+						if (subHeadInfo[offset] !== undefined){
+							nextChangeRow =subHeadInfo[offset].rowChg;	
+						}
+						else {
+							nextChangeRow = allSchInfo.length;
+						}
+					}
+
+					i +=  offset;
+				}
+
 				return i * (singleInfoBarWidth + barMargin);
 			}, 
 			fill : populationColor,
@@ -488,6 +713,11 @@ function drawPage(){
 //frlBars
 	var frlBars = svg.selectAll("rect.frlBars").data(allSchInfo);
 
+	if(subHeadInfo.length !== 0){
+		offset = 1;
+		nextChangeRow = subHeadInfo[offset].rowChg;	
+	}
+
 	frlBars.enter()
 		.append("rect")
 		.attr({
@@ -497,6 +727,20 @@ function drawPage(){
 			height: singleInfoBarWidth, 
 			x: maxTextWidth + 3,
 			y: function (d, i) {
+				if (subHeadInfo.length !== 0){
+					if(i >= nextChangeRow){
+						offset+=1;
+						if (subHeadInfo[offset] !== undefined){
+							nextChangeRow =subHeadInfo[offset].rowChg;	
+						}
+						else {
+							nextChangeRow = allSchInfo.length;
+						}
+					}
+
+					i +=  offset;
+				}
+
 				return i * (singleInfoBarWidth + barMargin);
 			}, 
 			fill : frlColor,
@@ -519,6 +763,11 @@ function drawPage(){
 //gradeAvg
 	var gradeLabels = svg.selectAll("text.grdLbls").data(allSchInfo);
 
+	if(subHeadInfo.length !== 0){
+		offset = 1;
+		nextChangeRow = subHeadInfo[offset].rowChg;	
+	}
+
 	gradeLabels.enter()
 		.append("text")
 		.text(function(d){
@@ -529,6 +778,20 @@ function drawPage(){
 				return maxTextWidth + 3 + barWidth(d.avgPopTotal) + this.getComputedTextLength();
 			},
 			y: function(d, i){
+				if (subHeadInfo.length !== 0){
+					if(i >= nextChangeRow){
+						offset+=1;
+						if (subHeadInfo[offset] !== undefined){
+							nextChangeRow =subHeadInfo[offset].rowChg;	
+						}
+						else {
+							nextChangeRow = allSchInfo.length;
+						}
+					}
+
+					i +=  offset;
+				}
+
 				return (i * (singleInfoBarWidth + barMargin)) + (singleInfoBarWidth/2);
 			},
 			fill: textColor,
@@ -602,18 +865,18 @@ function drawPage(){
 	first click 
 	click bar post clicking bar
 	second click bar to close bar*/
-	function clickBar(i){
+	function clickBar(clickedIdx){
 		//we don't care about a year if it doesn't have a population
 		var numPopInfoPoints = 0;
 
-		for(var prop in allSchInfo[i]){
+		for(var prop in allSchInfo[clickedIdx]){
 			if (prop.substring(0, 3) == "pop"){
 				numPopInfoPoints += 1;
 			}
 		}
 
 		//unclick previous, if exists or if it's a bar's second click
-		if (lastClickedIdx !== undefined || (lastClickedIdx == i)){
+		if (lastClickedIdx !== undefined || (lastClickedIdx == clickedIdx)){
 			svg.selectAll(".popBarDetail").remove();
 			svg.selectAll(".frlBarDetail").remove();
 			svg.selectAll(".popBarDetText").remove();
@@ -642,10 +905,10 @@ function drawPage(){
 					height: singleInfoBarWidth,
 					fill: frlColor,
 					y: function(){
-						if (lastClickedIdx > i){ //last click is before
+						if (lastClickedIdx > clickedIdx){ //last click is before
 							return (lastClickedIdx * (singleInfoBarWidth + barMargin)) + (singleInfoBarWidth * (numPopInfoPoints - 1));
 						}
-						else if (lastClickedIdx < i) { //last click was after
+						else if (lastClickedIdx < clickedIdx) { //last click was after
 							return (lastClickedIdx * (singleInfoBarWidth + barMargin));
 						}	
 					}
@@ -674,15 +937,20 @@ function drawPage(){
 		//move those that were not clicked out of the way of the expanding clicked bar
 		var notClicked;
 
-		if (lastClickedIdx == i){ //if second click, then all are not clicked
+		if (lastClickedIdx == clickedIdx){ //if second click, then all are not clicked
 			notClicked = popBars;
 		}
 		else {
 			notClicked = popBars.filter(
 				function(dIn, iIn){
-					return iIn != i;
+					return iIn != clickedIdx;
 				}
 			);
+		}
+
+		offset = 1;
+		if(subHeadInfo.length !== 0){
+			nextChangeRow = subHeadInfo[offset].rowChg;	
 		}
 
 		notClicked
@@ -693,14 +961,31 @@ function drawPage(){
 			.ease("bounce")
 			.attr({
 				y: function (dy, iy) {
-					if (i == lastClickedIdx){
-						return iy * (singleInfoBarWidth + barMargin);
+					var iyo = iy;
+
+					if (subHeadInfo.length !== 0){
+						//this is expecting the row number, which, if the click is past this index, is one more than this index
+						if((iy >= clickedIdx && clickedIdx != lastClickedIdx ? iy+1 : iy) >= nextChangeRow){
+							offset+=1;
+							if (subHeadInfo[offset] !== undefined){
+								nextChangeRow =subHeadInfo[offset].rowChg;	
+							}
+							else {
+								nextChangeRow = allSchInfo.length;
+							}
+						}
+
+						iyo +=  offset;
 					}
-					else if (iy > (i-1)){
-						return iy * (singleInfoBarWidth + barMargin) + ((singleInfoBarWidth * numPopInfoPoints) + barMargin);
+
+					if (clickedIdx == lastClickedIdx){
+						return iyo * (singleInfoBarWidth + barMargin);
+					}
+					else if (iy > (clickedIdx - 1)){
+						return (iyo * (singleInfoBarWidth + barMargin)) + ((singleInfoBarWidth * numPopInfoPoints) + barMargin);
 					}
 					else {
-						return iy * (singleInfoBarWidth + barMargin);
+						return iyo * (singleInfoBarWidth + barMargin);
 					}
 				},
 				height: singleInfoBarWidth,
@@ -708,15 +993,20 @@ function drawPage(){
 			});
 
 		//think this has to be done like this because the indexes for the two sets of bars are the same
-		if (lastClickedIdx == i){
+		if (lastClickedIdx == clickedIdx){
 			notClicked = frlBars;
 		}
 		else {
 			notClicked = frlBars.filter(
 				function(dIn, iIn){
-					return iIn != i;
+					return iIn != clickedIdx;
 				}
 			);
+		}
+
+		offset = 1;
+		if(subHeadInfo.length !== 0){
+			nextChangeRow = subHeadInfo[offset].rowChg;	
 		}
 
 		notClicked
@@ -727,29 +1017,50 @@ function drawPage(){
 			.ease("bounce")
 			.attr({
 				y: function (dy, iy) {
-					if (i == lastClickedIdx){
-						return iy * (singleInfoBarWidth + barMargin);
+					var iyo = iy;
+
+					if (subHeadInfo.length !== 0){
+						if((iy >= clickedIdx && clickedIdx != lastClickedIdx? iy+1 : iy)  >= nextChangeRow){
+							offset+=1;
+							if (subHeadInfo[offset] !== undefined){
+								nextChangeRow =subHeadInfo[offset].rowChg;	
+							}
+							else {
+								nextChangeRow = allSchInfo.length;
+							}
+						}
+
+						iyo +=  offset;
 					}
-					else if (iy > (i-1)){
-						return iy * (singleInfoBarWidth + barMargin) + ((singleInfoBarWidth * numPopInfoPoints) + barMargin);
+
+					if (clickedIdx == lastClickedIdx){
+						return iyo * (singleInfoBarWidth + barMargin);
+					}
+					else if (iy > (clickedIdx-1)){
+						return (iyo * (singleInfoBarWidth + barMargin)) + ((singleInfoBarWidth * numPopInfoPoints) + barMargin);
 					}
 					else {
-						return iy * (singleInfoBarWidth + barMargin);
+						return iyo * (singleInfoBarWidth + barMargin);
 					}
 				},
 				height: singleInfoBarWidth,
 				fill: frlColor
 			});
 
-		if (lastClickedIdx == i){
+		if (lastClickedIdx == clickedIdx){
 			notClicked = barLbls;
 		}
 		else {
 			notClicked = barLbls.filter(
 				function(dIn, iIn){
-					return iIn != i;
+					return iIn != clickedIdx;
 				}
 			);
+		}
+
+		offset = 1;
+		if(subHeadInfo.length !== 0){
+			nextChangeRow = subHeadInfo[offset].rowChg;	
 		}
 
 		notClicked
@@ -760,28 +1071,49 @@ function drawPage(){
 			.ease("bounce")
 			.attr({
 				y: function (dy, iy) {
-					if (i == lastClickedIdx){
-						return (iy * (singleInfoBarWidth + barMargin)) + (singleInfoBarWidth/2);
+					var iyo = iy;
+					
+					if (subHeadInfo.length !== 0){
+						if((iy >= clickedIdx && clickedIdx != lastClickedIdx ? iy+1 : iy)  >= nextChangeRow){
+							offset+=1;
+							if (subHeadInfo[offset] !== undefined){
+								nextChangeRow =subHeadInfo[offset].rowChg;	
+							}
+							else {
+								nextChangeRow = allSchInfo.length;
+							}
+						}
+
+						iyo +=  offset;
 					}
-					else if (iy > (i-1)){
-						return (iy * (singleInfoBarWidth + barMargin)) + (singleInfoBarWidth/2) + ((singleInfoBarWidth * numPopInfoPoints) + barMargin);
+
+					if (clickedIdx == lastClickedIdx){
+						return (iyo * (singleInfoBarWidth + barMargin)) + (singleInfoBarWidth/2);
+					}
+					else if (iy > (clickedIdx-1)){
+						return (iyo * (singleInfoBarWidth + barMargin)) + (singleInfoBarWidth/2) + ((singleInfoBarWidth * numPopInfoPoints) + barMargin);
 					}
 					else {
-						return (iy * (singleInfoBarWidth + barMargin)) + (singleInfoBarWidth/2);
+						return (iyo * (singleInfoBarWidth + barMargin)) + (singleInfoBarWidth/2);
 					}
 				},
 				fill: textColor
 			});	
 
-		if (lastClickedIdx == i){
+		if (lastClickedIdx == clickedIdx){
 			notClicked = gradeLabels;
 		}
 		else {
 			notClicked = gradeLabels.filter(
 				function(dIn, iIn){
-					return iIn != i;
+					return iIn != clickedIdx;
 				}
 			);
+		}
+
+		offset = 1;
+		if(subHeadInfo.length !== 0){
+			nextChangeRow = subHeadInfo[offset].rowChg;	
 		}
 
 		notClicked
@@ -793,24 +1125,80 @@ function drawPage(){
 			.attr({
 				//x: 0,
 				y: function (dy, iy) {
-					if (i == lastClickedIdx){
-						return (iy * (singleInfoBarWidth + barMargin)) + (singleInfoBarWidth/2);
+					var iyo = iy;
+
+					if (subHeadInfo.length !== 0){
+						if((iy >= clickedIdx && clickedIdx != lastClickedIdx ? iy+1 : iy)  >= nextChangeRow){
+							offset+=1;
+							if (subHeadInfo[offset] !== undefined){
+								nextChangeRow =subHeadInfo[offset].rowChg;	
+							}
+							else {
+								nextChangeRow = allSchInfo.length;
+							}
+						}
+
+						iyo +=  offset;
 					}
-					else if (iy > (i-1)){
-						return (iy * (singleInfoBarWidth + barMargin)) + (singleInfoBarWidth/2) + ((singleInfoBarWidth * numPopInfoPoints) + barMargin);
+
+					if (clickedIdx == lastClickedIdx){
+						return (iyo * (singleInfoBarWidth + barMargin)) + (singleInfoBarWidth/2);
+					}
+					else if (iy > (clickedIdx-1)){
+						return (iyo * (singleInfoBarWidth + barMargin)) + (singleInfoBarWidth/2) + ((singleInfoBarWidth * numPopInfoPoints) + barMargin);
 					}
 					else {
-						return (iy * (singleInfoBarWidth + barMargin)) + (singleInfoBarWidth/2);
+						return (iyo * (singleInfoBarWidth + barMargin)) + (singleInfoBarWidth/2);
 					}
 				},
 				fill: textColor
-			});	
+			});
+
+		//if there are headings, move those too
+		if (subHeadInfo.length !== 0){
+			for (var i = 0; i < subHeadInfo.length; i++) {
+				//we care if the clicked index is before the heading (grow) or if it's after but the prior click was before (shrink)
+				if (subHeadInfo[i].rowChg > clickedIdx || ( subHeadInfo[i].rowChg <= clickedIdx && subHeadInfo[i].rowChg > lastClickedIdx )){ 
+					d3.select("#subHeadLbl" + i)
+					.transition()
+					.duration(1000)
+					.ease("bounce")
+					.attr({
+						y: function () {
+							if (lastClickedIdx === undefined || (subHeadInfo[i].rowChg > clickedIdx && subHeadInfo[i].rowChg <= lastClickedIdx) ){
+								return Number(d3.select("#subHeadLbl" + i).attr("y")) + (singleInfoBarWidth * (numPopInfoPoints - 1));
+							}
+							else if ((subHeadInfo[i].rowChg <= clickedIdx || clickedIdx == lastClickedIdx) && subHeadInfo[i].rowChg > lastClickedIdx) {
+								return Number(d3.select("#subHeadLbl" + i).attr("y")) - (singleInfoBarWidth * (numPopInfoPoints - 1));
+							}
+							else {
+								return Number(d3.select("#subHeadLbl" + i).attr("y")); //dont do anything
+							}
+							
+						}
+					});
+				}
+			}
+		}
 
 		//Run click logic - if bar's second click, nothing is clicked
-		if (lastClickedIdx != i){
+		if (lastClickedIdx != clickedIdx){
+			var io = clickedIdx;
+		
+			if (subHeadInfo.length !== 0){
+				//we will always need the offset to be at least one because of the first heading
+				for (var j = 1; j < subHeadInfo.length; j++) {
+					if(clickedIdx < subHeadInfo[j].rowChg){
+						offset = j;
+						break;
+					}
+				}
+				io +=  offset;
+			}
+
 			//svg does not support z-index, go from back to front
 			//darkened average population bar and widen
-			svg.select("#popBar" + i)
+			svg.select("#popBar" + clickedIdx)
 				.classed("clicked", true)
 				.classed("unclicked", false)
 				.transition()
@@ -818,136 +1206,136 @@ function drawPage(){
 				.ease("bounce")
 				.attr({
 					height: (singleInfoBarWidth * numPopInfoPoints),
-					y : i * (singleInfoBarWidth + barMargin),
+					y : io * (singleInfoBarWidth + barMargin),
 					fill: populationDarkColor
 				}),
 			
 			//Move label to stay centered	
-			svg.select("#barLbl" + i)
+			svg.select("#barLbl" + clickedIdx)
 				.classed("clicked", true)
 				.classed("unclicked", false)
 				.transition()
 				.duration(1000)
 				.ease("bounce")
 				.attr({
-					y: (i * (singleInfoBarWidth + barMargin)) + ((numPopInfoPoints * singleInfoBarWidth)/2)
+					y: (io * (singleInfoBarWidth + barMargin)) + ((numPopInfoPoints * singleInfoBarWidth)/2)
 				});
 
 			//second add detailPopBars
 			//all bars start at 2010 and grow down and away the average
 
 			//2010
-			if (allSchInfo[i].pop2010Total !== undefined){
+			if (allSchInfo[clickedIdx].pop2010Total !== undefined){
 				svg.append("rect")
 					.classed("popBarDetail", true)
 					.attr({
 						height: singleInfoBarWidth,
 						x: maxTextWidth + 3, 
-						y: i * (singleInfoBarWidth + barMargin), 
+						y: io * (singleInfoBarWidth + barMargin), 
 						fill : populationDarkColor,
-						width : barWidth(allSchInfo[i].avgPopTotal),
-						id: "detPopBar2010" + i
+						width : barWidth(allSchInfo[clickedIdx].avgPopTotal),
+						id: "detPopBar2010" + clickedIdx
 					})
-					.on("click", function (d, i){
-						clickBar(i);
+					.on("click", function (){
+						clickBar(clickedIdx);
 					})
 					.transition()
 					.duration(1000)
 					.ease("bounce")
 					.attr({
-						width : barWidth(allSchInfo[i].pop2010Total),
+						width : barWidth(allSchInfo[clickedIdx].pop2010Total),
 						fill : populationColor
 					});
 
 				svg.append("text")
 					.classed("popBarDetText", true)
 					.attr({
-						x:  maxTextWidth + 3 + barWidth((allSchInfo[i].pop2010Total > allSchInfo[i].avgPopTotal ? allSchInfo[i].pop2010Total : allSchInfo[i].avgPopTotal)),
-						y: (i * (singleInfoBarWidth + barMargin)) + fontSize,
+						x:  maxTextWidth + 3 + barWidth((allSchInfo[clickedIdx].pop2010Total > allSchInfo[clickedIdx].avgPopTotal ? allSchInfo[clickedIdx].pop2010Total : allSchInfo[clickedIdx].avgPopTotal)),
+						y: (io * (singleInfoBarWidth + barMargin)) + fontSize,
 						id: "barLbl2010"
 					});
 
 				//this is extracted how it is to keep whatever doesn't need to be different by year (like the y coord) out
-				appendPopDetailLabels(d3.select("#barLbl2010"), "2010", i);
+				appendPopDetailLabels(d3.select("#barLbl2010"), "2010", clickedIdx);
 			}
 			
 
 			//2011	
-			if (allSchInfo[i].pop2011Total !== undefined){
+			if (allSchInfo[clickedIdx].pop2011Total !== undefined){
 				svg.append("rect")
 					.classed("popBarDetail", true)
 					.attr({
 						height: singleInfoBarWidth, 
 						x: maxTextWidth + 3,
-						y: i * (singleInfoBarWidth + barMargin), 
+						y: io * (singleInfoBarWidth + barMargin), 
 						fill : populationDarkColor,
-						width : barWidth(allSchInfo[i].avgPopTotal),
-						id: "detPopBar2011" + i
+						width : barWidth(allSchInfo[clickedIdx].avgPopTotal),
+						id: "detPopBar2011" + clickedIdx
 					})
-					.on("click", function (d, i){
-						clickBar(i);
+					.on("click", function (){
+						clickBar(clickedIdx);
 					})
 					.transition()
 					.duration(1000)
 					.ease("bounce")
 					.attr({
-						y: i * (singleInfoBarWidth + barMargin) + (allSchInfo[i].pop2010Total !== undefined ? singleInfoBarWidth : 0),
-						width : barWidth(allSchInfo[i].pop2011Total),
+						y: io * (singleInfoBarWidth + barMargin) + (allSchInfo[clickedIdx].pop2010Total !== undefined ? singleInfoBarWidth : 0),
+						width : barWidth(allSchInfo[clickedIdx].pop2011Total),
 						fill : populationColor
 					});
 
 				svg.append("text")
 					.classed("popBarDetText", true)
 					.attr({
-						x: maxTextWidth + 3 + barWidth((allSchInfo[i].pop2011Total > allSchInfo[i].avgPopTotal ? allSchInfo[i].pop2011Total : allSchInfo[i].avgPopTotal)),
-						y: (i * (singleInfoBarWidth + barMargin)) + fontSize + (allSchInfo[i].pop2010Total !== undefined ? singleInfoBarWidth : 0),
+						x: maxTextWidth + 3 + barWidth((allSchInfo[clickedIdx].pop2011Total > allSchInfo[clickedIdx].avgPopTotal ? allSchInfo[clickedIdx].pop2011Total : allSchInfo[clickedIdx].avgPopTotal)),
+						y: (io * (singleInfoBarWidth + barMargin)) + fontSize + (allSchInfo[clickedIdx].pop2010Total !== undefined ? singleInfoBarWidth : 0),
 						id: "barLbl2011"
 					});
 
-				appendPopDetailLabels(d3.select("#barLbl2011"), "2011", i);
+				appendPopDetailLabels(d3.select("#barLbl2011"), "2011", clickedIdx);
 			} 
 			
 
 			//2012
-			if (allSchInfo[i].pop2012Total !== undefined){
+			if (allSchInfo[clickedIdx].pop2012Total !== undefined){
 				svg.append("rect")
 					.classed("popBarDetail", true)
 					.attr({
 						height: singleInfoBarWidth, 
 						x: maxTextWidth + 3,
-						y: i * (singleInfoBarWidth + barMargin),
-						width : barWidth(allSchInfo[i].avgPopTotal), 
+						y: io * (singleInfoBarWidth + barMargin),
+						width : barWidth(allSchInfo[clickedIdx].avgPopTotal), 
 						fill : populationDarkColor,
-						id: "detPopBar2012" + i
+						id: "detPopBar2012" + clickedIdx
 					})
-					.on("click", function (d, i){
-						clickBar(i);
+					.on("click", function (){
+						clickBar(clickedIdx);
 					})
 					.transition()
 					.duration(1000)
 					.ease("bounce")
 					.attr({
-						y: i * (singleInfoBarWidth + barMargin) + (allSchInfo[i].pop2010Total !== undefined ? singleInfoBarWidth : 0) + (allSchInfo[i].pop2011Total !== undefined ? singleInfoBarWidth : 0),
-						width : barWidth(allSchInfo[i].pop2012Total),
+						y: io * (singleInfoBarWidth + barMargin) + (allSchInfo[clickedIdx].pop2010Total !== undefined ? singleInfoBarWidth : 0) + (allSchInfo[clickedIdx].pop2011Total !== undefined ? singleInfoBarWidth : 0),
+						width : barWidth(allSchInfo[clickedIdx].pop2012Total),
 						fill : populationColor
 					});
 
 				svg.append("text")
 					.classed("popBarDetText", true)
 					.attr({
-						x: maxTextWidth + 3 + barWidth((allSchInfo[i].pop2012Total > allSchInfo[i].avgPopTotal ? allSchInfo[i].pop2012Total : allSchInfo[i].avgPopTotal)),
-						y: (i * (singleInfoBarWidth + barMargin)) + fontSize + (allSchInfo[i].pop2010Total !== undefined ? singleInfoBarWidth : 0) + (allSchInfo[i].pop2011Total !== undefined ? singleInfoBarWidth : 0),
+						x: maxTextWidth + 3 + barWidth((allSchInfo[clickedIdx].pop2012Total > allSchInfo[clickedIdx].avgPopTotal ? allSchInfo[clickedIdx].pop2012Total : allSchInfo[clickedIdx].avgPopTotal)),
+						y: (io * (singleInfoBarWidth + barMargin)) + fontSize + (allSchInfo[clickedIdx].pop2010Total !== undefined ? singleInfoBarWidth : 0) + (allSchInfo[clickedIdx].pop2011Total !== undefined ? singleInfoBarWidth : 0),
 						id: "barLbl2012"
 					});
 
-				appendPopDetailLabels(d3.select("#barLbl2012"), "2012", i);
+				appendPopDetailLabels(d3.select("#barLbl2012"), "2012", clickedIdx);
 			}
 			
 
 			//third, move the frlBar for the clicked bar to the front, then widen and darken
-			svg.selectAll("#frlBar" + i).moveToFront();
+			svg.selectAll("#frlBar" + clickedIdx).moveToFront();
 	
-			svg.selectAll("#frlBar" + i)
+			svg.selectAll("#frlBar" + clickedIdx)
 				.classed("clicked", true)
 				.classed("unclicked", false)
 				.transition()
@@ -955,84 +1343,84 @@ function drawPage(){
 				.ease("bounce")
 				.attr({
 					height: (singleInfoBarWidth * numPopInfoPoints),
-					y : i * (singleInfoBarWidth + barMargin),
+					y : io * (singleInfoBarWidth + barMargin),
 					fill: frlDarkColor
 				});
 
 			//fourth, detailed frl
 			//2010
-			if (allSchInfo[i].frlPercent2010 !== undefined){
+			if (allSchInfo[clickedIdx].frlPercent2010 !== undefined){
 				svg.append("rect")
 					.classed("frlBarDetail", true)
 					.attr({
 						height: singleInfoBarWidth, 
-						width : barWidth((allSchInfo[i].avgFRLTotal/100) * allSchInfo[i].pop2010Total),
+						width : barWidth((allSchInfo[clickedIdx].avgFRLTotal/100) * allSchInfo[clickedIdx].pop2010Total),
 						x: maxTextWidth + 3,
-						y: i * (singleInfoBarWidth + barMargin), 
+						y: io * (singleInfoBarWidth + barMargin), 
 						fill : frlDarkColor,
-						id: "detFrlBar2010" + i
+						id: "detFrlBar2010" + clickedIdx
 					})
-					.on("click", function (d, i){
-						clickBar(i);
+					.on("click", function (){
+						clickBar(clickedIdx);
 					})
 					.transition()
 					.duration(1000)
 					.ease("bounce")
 					.attr({
 						fill: frlColor,
-						width : barWidth((allSchInfo[i].frlPercent2010/100) * allSchInfo[i].pop2010Total)
+						width : barWidth((allSchInfo[clickedIdx].frlPercent2010/100) * allSchInfo[clickedIdx].pop2010Total)
 
 					});
 			}
 			
 			
 			//2011	
-			if (allSchInfo[i].frlPercent2011 !== undefined){
+			if (allSchInfo[clickedIdx].frlPercent2011 !== undefined){
 				svg.append("rect")
 					.classed("frlBarDetail", true)
 					.attr({
 						height: singleInfoBarWidth, 
-						width : barWidth((allSchInfo[i].avgFRLTotal/100) * allSchInfo[i].pop2011Total),
+						width : barWidth((allSchInfo[clickedIdx].avgFRLTotal/100) * allSchInfo[clickedIdx].pop2011Total),
 						x: maxTextWidth + 3,
-						y: i * (singleInfoBarWidth + barMargin), 
+						y: io * (singleInfoBarWidth + barMargin), 
 						fill : frlDarkColor,
-						id: "detFrlBar2011" + i
+						id: "detFrlBar2011" + clickedIdx
 					})
-					.on("click", function (d, i){
-						clickBar(i);
+					.on("click", function (){
+						clickBar(clickedIdx);
 					})
 					.transition()
 					.duration(1000)
 					.ease("bounce")
 					.attr({
-						y: i * (singleInfoBarWidth + barMargin) + (allSchInfo[i].frlPercent2010 !== undefined ? singleInfoBarWidth : 0), 
+						y: io * (singleInfoBarWidth + barMargin) + (allSchInfo[clickedIdx].frlPercent2010 !== undefined ? singleInfoBarWidth : 0), 
 						fill: frlColor,
-						width : barWidth((allSchInfo[i].frlPercent2011/100) * allSchInfo[i].pop2011Total)
+						width : barWidth((allSchInfo[clickedIdx].frlPercent2011/100) * allSchInfo[clickedIdx].pop2011Total)
 					});
 			}
 
 			//2012
-			if (allSchInfo[i].frlPercent2012 !== undefined){
+			if (allSchInfo[clickedIdx].frlPercent2012 !== undefined){
 				svg.append("rect")
 					.classed("frlBarDetail", true)
 					.attr({
 						height: singleInfoBarWidth, 
-						width : barWidth((allSchInfo[i].avgFRLTotal/100) * allSchInfo[i].pop2012Total),
+						width : barWidth((allSchInfo[clickedIdx].avgFRLTotal/100) * allSchInfo[clickedIdx].pop2012Total),
 						x: maxTextWidth + 3,
-						y: i * (singleInfoBarWidth + barMargin), 
+						y: io * (singleInfoBarWidth + barMargin), 
 						fill : frlDarkColor,
-						id: "detFrlBar2012" + i
+						id: "detFrlBar2012" + clickedIdx
 					})
-					.on("click", function (d, i){
-						clickBar(i);
+					.on("click", function (){
+						clickBar(clickedIdx);
 					})
 					.transition()
 					.duration(1000)
 					.ease("bounce")
 					.attr({
-						y: i * (singleInfoBarWidth + barMargin) + (allSchInfo[i].frlPercent2010 !== undefined ? singleInfoBarWidth : 0) + (allSchInfo[i].frlPercent2011 !== undefined ? singleInfoBarWidth : 0), 
+						y: io * (singleInfoBarWidth + barMargin) + (allSchInfo[clickedIdx].frlPercent2010 !== undefined ? singleInfoBarWidth : 0) + (allSchInfo[clickedIdx].frlPercent2011 !== undefined ? singleInfoBarWidth : 0), 
 						fill: frlColor,
-						width : barWidth((allSchInfo[i].frlPercent2012/100) * allSchInfo[i].pop2012Total)
+						width : barWidth((allSchInfo[clickedIdx].frlPercent2012/100) * allSchInfo[clickedIdx].pop2012Total)
 					});
 			}
 
@@ -1040,7 +1428,7 @@ function drawPage(){
 			//goes avg by year, detail by year, line, average overall 
 			//do it in that order to get the text length 
 
-			var maxBar = d3.max([allSchInfo[i].pop2010Total, allSchInfo[i].pop2011Total, allSchInfo[i].pop2012Total]);
+			var maxBar = d3.max([allSchInfo[clickedIdx].pop2010Total, allSchInfo[clickedIdx].pop2011Total, allSchInfo[clickedIdx].pop2012Total]);
 			var maxLbl = 0;
 
 			d3.selectAll(".popBarDetText")
@@ -1054,48 +1442,48 @@ function drawPage(){
 			var grdDetX = maxTextWidth + barWidth(maxBar) + maxLbl + 6;
 
 			//2010
-			if (allSchInfo[i].pop2010Total !== undefined){
+			if (allSchInfo[clickedIdx].pop2010Total !== undefined){
 				svg.append("text")
 					.classed("grdDetText", true)
 					.attr({
 						"font-family" : "sans-serif",
 						"font-size": fontSize - 2,
 						x: grdDetX,
-						y: (i * (singleInfoBarWidth + barMargin)) + fontSize,
+						y: (io * (singleInfoBarWidth + barMargin)) + fontSize,
 						id: "grdLbl2010"
 					});
 
-				appendGrdYearAvgLabel(d3.select("#grdLbl2010"), "2010", i);
+				appendGrdYearAvgLabel(d3.select("#grdLbl2010"), "2010", clickedIdx);
 			}
 
 			//2011
-			if (allSchInfo[i].pop2011Total !== undefined){
+			if (allSchInfo[clickedIdx].pop2011Total !== undefined){
 				svg.append("text")
 					.classed("grdDetText", true)
 					.attr({
 						"font-family" : "sans-serif",
 						"font-size": fontSize - 2,
 						x: grdDetX,
-						y: (i * (singleInfoBarWidth + barMargin)) + fontSize + (allSchInfo[i].pop2010Total !== undefined ? singleInfoBarWidth : 0),
+						y: (io * (singleInfoBarWidth + barMargin)) + fontSize + (allSchInfo[clickedIdx].pop2010Total !== undefined ? singleInfoBarWidth : 0),
 						id: "grdLbl2011"
 					});
 
-				appendGrdYearAvgLabel(d3.select("#grdLbl2011"), "2011", i);
+				appendGrdYearAvgLabel(d3.select("#grdLbl2011"), "2011", clickedIdx);
 			}
 
 			//2012
-			if (allSchInfo[i].pop2012Total !== undefined){
+			if (allSchInfo[clickedIdx].pop2012Total !== undefined){
 				svg.append("text")
 					.classed("grdDetText", true)
 					.attr({
 						"font-family" : "sans-serif",
 						"font-size": fontSize - 2,
 						x: grdDetX,
-						y: (i * (singleInfoBarWidth + barMargin)) + fontSize + (allSchInfo[i].pop2010Total !== undefined ? singleInfoBarWidth : 0) + (allSchInfo[i].pop2011Total !== undefined ? singleInfoBarWidth : 0),
+						y: (io * (singleInfoBarWidth + barMargin)) + fontSize + (allSchInfo[clickedIdx].pop2010Total !== undefined ? singleInfoBarWidth : 0) + (allSchInfo[clickedIdx].pop2011Total !== undefined ? singleInfoBarWidth : 0),
 						id: "grdLbl2012"
 					});
 
-				appendGrdYearAvgLabel(d3.select("#grdLbl2012"), "2012", i);
+				appendGrdYearAvgLabel(d3.select("#grdLbl2012"), "2012", clickedIdx);
 			}
 
 			//details
@@ -1110,14 +1498,14 @@ function drawPage(){
 			});
 
 			//2010
-			appendGrdDetailLabels(d3.select("#grdLbl2010"), "2010", i, startNextLbl);
+			appendGrdDetailLabels(d3.select("#grdLbl2010"), "2010", clickedIdx, startNextLbl);
 			//2011
-			appendGrdDetailLabels(d3.select("#grdLbl2011"), "2011", i, startNextLbl);
+			appendGrdDetailLabels(d3.select("#grdLbl2011"), "2011", clickedIdx, startNextLbl);
 			//2012
-			appendGrdDetailLabels(d3.select("#grdLbl2012"), "2012", i, startNextLbl);
+			appendGrdDetailLabels(d3.select("#grdLbl2012"), "2012", clickedIdx, startNextLbl);
 
 			//draw a line seperating details from overall average if there is grade information
-			if (svg.select("#grdLbl" + i).node().textContent !== "") {
+			if (svg.select("#grdLbl" + clickedIdx).node().textContent !== "") {
 				if (!d3.select(".grdDetLbls").empty()){
 					maxLbl = 0;
 
@@ -1140,20 +1528,20 @@ function drawPage(){
 					.attr({
 						//all grdDetLbls x values will be the same, just select the first one
 						"x1": maxLbl + 3,
-						"y1": i * (singleInfoBarWidth + barMargin),
+						"y1": io * (singleInfoBarWidth + barMargin),
 						"x2": maxLbl + 3,
-						"y2": i * (singleInfoBarWidth + barMargin) + (singleInfoBarWidth * numPopInfoPoints)
+						"y2": io * (singleInfoBarWidth + barMargin) + (singleInfoBarWidth * numPopInfoPoints)
 					})
 					.style("stroke", textColor);
 			}
 
 			// move average to leftmost
-			svg.select("#grdLbl" + i)
+			svg.select("#grdLbl" + clickedIdx)
 				.classed("clicked", true)
 				.classed("unclicked", false)
 				.attr({
-					x: maxLbl + d3.select("#grdLbl" + i).node().getComputedTextLength() + 6,
-					y: (i * (singleInfoBarWidth + barMargin)) + ((numPopInfoPoints * singleInfoBarWidth)/2),
+					x: maxLbl + d3.select("#grdLbl" + clickedIdx).node().getComputedTextLength() + 6,
+					y: (io * (singleInfoBarWidth + barMargin)) + ((numPopInfoPoints * singleInfoBarWidth)/2),
 					"fill-opacity" : 0.0001
 				})
 				.transition()
@@ -1165,7 +1553,7 @@ function drawPage(){
 				});
 
 
-			lastClickedIdx = i;
+			lastClickedIdx = clickedIdx;
 		}
 		else { //if you reclicked the previous click, clear the last clicked index like the page is new
 			lastClickedIdx = undefined;
@@ -1173,7 +1561,7 @@ function drawPage(){
 		
 	}
 
-	function appendPopDetailLabels(barLbl, year, i){
+	function appendPopDetailLabels(barLbl, year, clickedIdx){
 		var detailFontSize = 10;
 
 		barLbl.append("tspan")
@@ -1190,9 +1578,9 @@ function drawPage(){
 				"fill-opacity": 1
 			});
 
-		if (allSchInfo[i]["frlPercent" + year] !== undefined){
+		if (allSchInfo[clickedIdx]["frlPercent" + year] !== undefined){
 			barLbl.append("tspan")
-				.text(Math.round((allSchInfo[i]["frlPercent" + year]/100) * allSchInfo[i]["pop" + year + "Total"]))
+				.text(Math.round((allSchInfo[clickedIdx]["frlPercent" + year]/100) * allSchInfo[clickedIdx]["pop" + year + "Total"]))
 				.attr({
 					fill: frlDarkColor,
 					"fill-opacity": 0.0001,
@@ -1221,7 +1609,7 @@ function drawPage(){
 		}
 
 		barLbl.append("tspan")
-			.text(allSchInfo[i]["pop" + year + "Total"])
+			.text(allSchInfo[clickedIdx]["pop" + year + "Total"])
 			.attr({
 				fill: populationDarkColor,
 				"fill-opacity": 0.0001,
@@ -1235,31 +1623,17 @@ function drawPage(){
 			});
 	}
 
-	function getLblStr(year, i){
-		var gradeByYr = [];
-
-		for(var prop in allSchInfo[i]){
-			if (prop.substring(0,5) == "grade" && prop.substring(6, prop.length) == year){
-				var schType = prop.substring(5, 6);
-				gradeByYr.push(allSchInfo[i]["grade" + schType + year]);
-			}
-		}
-
-		if (gradeByYr.length == 1){ //if only one, display that
-			return gradeByYr[0];
-		}
-		else {
-			return Math.round(gradeByYr.avg());
-		}
+	function getLblStrByIdx(year, clickedIdx){
+		return getGrdByYear(year, allSchInfo[clickedIdx]);
 
 	}
 
-	function appendGrdYearAvgLabel(barLbl, year, i){
+	function appendGrdYearAvgLabel(barLbl, year, clickedIdx){
 		var improveGradeColor = "#23B23C";
 		var declineGradeColor = "#D9472B";
 
 		//in it's own method to get prev years easily
-		var lblStr = getLblStr(year, i);
+		var lblStr = getLblStrByIdx(year, clickedIdx);
 
 		barLbl.append("tspan")
 			.text(Number(lblStr).toLetterGrade())
@@ -1271,7 +1645,7 @@ function drawPage(){
 						return textColor;
 					}
 					else {
-						var lastLblStr = getLblStr(year-1, i);
+						var lastLblStr = getLblStrByIdx(year-1, clickedIdx);
 
 						if (lblStr > lastLblStr){ //improvement
 							return improveGradeColor;
@@ -1295,25 +1669,23 @@ function drawPage(){
 			});
 	}
 
-	function appendGrdDetailLabels(barLbl, year, i, startNextLbl){
+	function appendGrdDetailLabels(barLbl, year, clickedIdx, startNextLbl){
 		var lblDetStrs = [];
 
-		if (allSchInfo[i]["gradeE" + year] !== undefined){
-			lblDetStrs.push({grade : allSchInfo[i]["gradeE" + year], level : "E"});
+		if (allSchInfo[clickedIdx]["gradeE" + year] !== undefined){
+			lblDetStrs.push({grade : allSchInfo[clickedIdx]["gradeE" + year], level : "E"});
 		}
-		if (allSchInfo[i]["gradeM" + year] !== undefined){
-			lblDetStrs.push({grade : allSchInfo[i]["gradeM" + year], level : "M"});
+		if (allSchInfo[clickedIdx]["gradeM" + year] !== undefined){
+			lblDetStrs.push({grade : allSchInfo[clickedIdx]["gradeM" + year], level : "M"});
 		}
-		if (allSchInfo[i]["gradeH" + year] !== undefined){
-			lblDetStrs.push({grade : allSchInfo[i]["gradeH" + year], level : "H"});
+		if (allSchInfo[clickedIdx]["gradeH" + year] !== undefined){
+			lblDetStrs.push({grade : allSchInfo[clickedIdx]["gradeH" + year], level : "H"});
 		}
 
 		if (lblDetStrs.length > 1){
 			var detailFontSize = 10;
 			var improveGradeColor = "#23B23C";
-			var declineGradeColor = "#D9472B";
-
-			
+			var declineGradeColor = "#D9472B";	
 
 			barLbl.append("tspan")
 				.classed("grdDetLbls" , true)
@@ -1337,9 +1709,12 @@ function drawPage(){
 						}
 					},
 					fill: function(){
-						var lastDetStr  = allSchInfo[i]["grade"  + lblDetStrs[j].level + (year - 1)];
+						var lastDetStr  = allSchInfo[clickedIdx]["grade"  + lblDetStrs[j].level + (year - 1)];
 
-						if (lblDetStrs[j].grade > lastDetStr){ //improvement
+						if (lastDetStr !== undefined){
+							return textColor;
+						}
+						else if (lblDetStrs[j].grade > lastDetStr){ //improvement
 							return improveGradeColor;
 						}
 						else if (lblDetStrs[j].grade < lastDetStr){ //not an improvement

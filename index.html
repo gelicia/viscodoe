@@ -8,16 +8,28 @@
 <body onLoad="loadDataset()">
 	<div id="content">
 		<h1 id="loading" class="loading">Loading Data...</h1>
-		<p id="instructions" class="inst">There is one bar per school. The blue bar represents the population of the school - orange is the percentage of that population on the Free/Reduced Lunch population. Click a bar to expand and see data by year.</p>
+		<p id="instructions" class="inst">There is one bar per school. Initially the bar and grade is an average over 2010-2012. Click on the bar to expand.<br/>
+      The blue bar represents the population of the school and orange is how much of that population was on the Free/Reduced Lunch program. <br/>
+      Grades are averaged over 3 years, then by year once the bar is expanded. Sometimes, several schools will be organized under one school, sharing a building and a school number. In that instance, the grade for that year was split up in up to three levels - Elementary, Middle and High. If you expand one of those schools, you will see a calculated average grade for that year, along with the individual grades for (E)lementary, (M)iddle and (H)igh school. <br/>
+      In all instances, grades will be green to show their grade improved from the previous year, and red when the grade was worse than the previous year.<br/><br/>
+
+      Note: Sometimes one year's worth of info will not load into the page. This happens rarely and I'm not familiar enough with networking to know why this information would stop loading while the rest the page continued. If you notice this, please refresh the page. I've never had it happen twice in a row. 
+    </p>
 	
-    <p id="selectionOptions">Order by: <input type="radio" name="orderByGradePop" > Grade, Population </br> 
-    <input type="radio" name="orderByGradePop" > District, Grade, Population </br>  </p>
+    <p id="selectionOptions" class="selectionOptions"><span class="innerHead">Order by</span>:<br/> 
+      <input type="radio" name="orderBy" value="schNumber" checked onchange="changeSort()"> School Number </br> 
+      <input type="radio" name="orderBy" value="schName" onchange="changeSort()"> School Name </br> 
+      <input type="radio" name="orderBy" value="gradePop" onchange="changeSort()"> Grade, Population </br> 
+      <input type="radio" name="orderBy" value="distNameGradePop" onchange="changeSort()"> District Name, Grade, Population </br>
+      <input type="radio" name="orderBy" value="variance" onchange="changeSort()"> Variance in grades, high to low </br> 
+    </p>
   </div>
 	<svg/>
 <!-- web browser version-->
   <script src="js/lib/miso.ds.deps.ie.min.0.4.0.js"></script>
   <!--<script src="http://d3js.org/d3.v3.min.js"></script>-->
   <script src="js/lib/d3.v3.min.js"></script>
+  <script src="js/lib/jquery-1.8.3.min.js"></script>
 
   <!-- Your application code -->
   <script src="js/main.js"></script>

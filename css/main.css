@@ -6,6 +6,20 @@ h1.loading {
 	color: #8F4F1C;
 }
 
-p.inst p.selectionOptions {
+p {
+	color: #8F4F1C;
+	font-family: sans-serif;
+	font-size: 14px;
+}
+
+.innerHead {
+	font-weight: bold;
+}
+
+p.inst {
+	display: none;
+}
+
+p.selectionOptions {
 	display: none;
 }
